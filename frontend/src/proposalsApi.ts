@@ -1,4 +1,5 @@
-import { api } from "./api";
+// frontend/src/proposalsApi.ts
+import { api, ensureCsrf } from "./api";
 
 export type ProposalStatus = "DRAFT" | "SENT" | "ACCEPTED" | "REJECTED";
 
@@ -6,7 +7,7 @@ export type Proposal = {
   id: number;
   deal: number;
 
-  projects: number[]; // ✅
+  projects: number[];
 
   version_label: string;
   status: ProposalStatus;
@@ -27,12 +28,22 @@ export type Proposal = {
   created_by: number;
 };
 
+// ✅ Continua existindo (para a tela do DealDetail, por exemplo)
 export async function listProposals(dealId: number): Promise<Proposal[]> {
   const { data } = await api.get(`/proposals/?deal=${dealId}`);
   return data;
 }
 
-export async function createProposal(payload: Partial<Proposal> & { deal: number }): Promise<Proposal> {
+// ✅ NOVA: pega todas as propostas do usuário (filtrado pelo backend: deal__owner=user)
+export async function listAllProposals(): Promise<Proposal[]> {
+  const { data } = await api.get(`/proposals/`);
+  return data;
+}
+
+export async function createProposal(
+  payload: Partial<Proposal> & { deal: number }
+): Promise<Proposal> {
+  await ensureCsrf();
   const { data } = await api.post(`/proposals/`, payload);
   return data;
 }

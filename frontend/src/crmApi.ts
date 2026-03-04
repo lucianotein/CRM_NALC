@@ -1,3 +1,4 @@
+// frontend/src/crmApi.ts
 import { api, ensureCsrf } from "./api";
 import type { DealStage } from "./types";
 
@@ -36,6 +37,10 @@ export type Project = {
   updated_at: string;
 };
 
+/* =========================
+ * Accounts
+ * ========================= */
+
 export async function listAccounts(): Promise<Account[]> {
   const { data } = await api.get("/accounts/");
   return data;
@@ -52,16 +57,54 @@ export async function getAccount(id: number): Promise<Account> {
   return data;
 }
 
+export async function updateAccount(
+  id: number,
+  payload: Partial<Account>
+): Promise<Account> {
+  await ensureCsrf();
+  const { data } = await api.patch(`/accounts/${id}/`, payload);
+  return data;
+}
+
+export async function deleteAccount(id: number): Promise<void> {
+  await ensureCsrf();
+  await api.delete(`/accounts/${id}/`);
+}
+
+/* =========================
+ * Contacts
+ * ========================= */
+
 export async function listContacts(): Promise<ContactPerson[]> {
   const { data } = await api.get("/contacts/");
   return data;
 }
 
-export async function createContact(payload: Partial<ContactPerson>): Promise<ContactPerson> {
+export async function createContact(
+  payload: Partial<ContactPerson>
+): Promise<ContactPerson> {
   await ensureCsrf();
   const { data } = await api.post("/contacts/", payload);
   return data;
 }
+
+export async function updateContact(
+  id: number,
+  payload: Partial<ContactPerson>
+): Promise<ContactPerson> {
+  await ensureCsrf();
+  const { data } = await api.patch(`/contacts/${id}/`, payload);
+  return data;
+}
+
+export async function deleteContact(id: number): Promise<void> {
+  await ensureCsrf();
+  await api.delete(`/contacts/${id}/`);
+}
+
+/* =========================
+ * Projects
+ * ========================= */
 
 export async function listProjects(): Promise<Project[]> {
   const { data } = await api.get("/projects/");
@@ -74,11 +117,31 @@ export async function createProject(payload: Partial<Project>): Promise<Project>
   return data;
 }
 
+export async function updateProject(
+  id: number,
+  payload: Partial<Project>
+): Promise<Project> {
+  await ensureCsrf();
+  const { data } = await api.patch(`/projects/${id}/`, payload);
+  return data;
+}
+
+export async function deleteProject(id: number): Promise<void> {
+  await ensureCsrf();
+  await api.delete(`/projects/${id}/`);
+}
+
+/* =========================
+ * Deals (atalho usado em AccountDetail)
+ * ========================= */
+
 export async function createDeal(payload: {
   title: string;
   account: number;
   project?: number | null;
   stage?: DealStage;
+  // se você quiser passar valor_total direto:
+  // valor_total?: number | null;
 }): Promise<any> {
   await ensureCsrf();
   const { data } = await api.post("/deals/", payload);

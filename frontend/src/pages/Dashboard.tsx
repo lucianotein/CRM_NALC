@@ -1,8 +1,11 @@
 import React, { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+
 import { listDeals } from "../dealsApi";
 import type { DealStage } from "../types";
+import { listAllProposals, type Proposal } from "../proposalsApi";
+
 import {
   LayoutDashboard,
   KanbanSquare,
@@ -33,25 +36,100 @@ function stageLabel(s: string) {
   return map[s] || s;
 }
 
+const brl = (n: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+    Number.isFinite(n) ? n : 0
+  );
+
+function toNumber(v: any): number {
+  if (v === null || v === undefined || v === "") return NaN;
+  if (typeof v === "number") return v;
+
+  // tolera "1.234,56" ou "1234.56"
+  const s = String(v).trim();
+
+  // se tem vírgula, tratamos como pt-BR: remove milhares e troca vírgula por ponto
+  if (s.includes(",")) {
+    const n = Number(s.replace(/\./g, "").replace(",", "."));
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+}
+
 export default function Dashboard() {
   const dealsQ = useQuery({ queryKey: ["deals"], queryFn: listDeals });
+  const proposalsQ = useQuery({ queryKey: ["proposals"], queryFn: listAllProposals });
 
   const deals = dealsQ.data || [];
+  const proposals = proposalsQ.data || [];
 
-  const counts = useMemo(() => {
-    const c: Record<string, number> = {};
-    for (const s of STAGES) c[s.key] = 0;
-    c["PERDIDO"] = 0;
-    c["PAUSADO"] = 0;
+  // Agrupa propostas por deal
+  const proposalsByDeal = useMemo(() => {
+    const m: Record<number, Proposal[]> = {};
+    for (const p of proposals) {
+      const dealId = Number((p as any).deal);
+      if (!Number.isFinite(dealId)) continue;
+      (m[dealId] ||= []).push(p);
+    }
+    return m;
+  }, [proposals]);
+
+  // Valor do LEAD (quando não tem proposta)
+  function leadValue(d: any): number {
+    const v =
+      d.valor_total ??
+      d.value ??
+      d.amount ??
+      d.valor ??
+      d.total_value ??
+      d.vlr ??
+      0;
+
+    const n = toNumber(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  // ✅ Regra:
+  // - se tiver proposta(s): soma de valor_total das propostas
+  // - senão: valor do lead
+  function effectiveDealValue(d: any): number {
+    const ps = proposalsByDeal[d.id] || [];
+    const sumProps = ps.reduce((acc, p) => {
+      const n = toNumber((p as any).valor_total);
+      return Number.isFinite(n) ? acc + n : acc;
+    }, 0);
+
+    if (sumProps > 0) return sumProps;
+    return leadValue(d);
+  }
+
+  // Stats por etapa: count + total (usando effectiveDealValue)
+  const stats = useMemo(() => {
+    type Stat = { count: number; total: number };
+    const s: Record<string, Stat> = {};
+
+    for (const st of STAGES) s[st.key] = { count: 0, total: 0 };
+    s["PERDIDO"] = { count: 0, total: 0 };
+    s["PAUSADO"] = { count: 0, total: 0 };
 
     for (const d of deals as any[]) {
-      c[d.stage] = (c[d.stage] || 0) + 1;
+      const stage = d.stage || "LEAD";
+      if (!s[stage]) s[stage] = { count: 0, total: 0 };
+      s[stage].count += 1;
+      s[stage].total += effectiveDealValue(d);
     }
-    return c;
-  }, [deals]);
+    return s;
+  }, [deals, proposalsByDeal]);
+
+  const grandTotal = useMemo(() => {
+    let t = 0;
+    for (const d of deals as any[]) t += effectiveDealValue(d);
+    return t;
+  }, [deals, proposalsByDeal]);
 
   const latestDeals = useMemo(() => {
-    // tenta ordenar pelo last_contact_at; cai no id
     return [...(deals as any[])]
       .sort((a, b) => {
         const da = a.last_contact_at ? new Date(a.last_contact_at).getTime() : 0;
@@ -62,12 +140,16 @@ export default function Dashboard() {
       .slice(0, 6);
   }, [deals]);
 
+  const loading = dealsQ.isLoading || proposalsQ.isLoading;
+  const error = dealsQ.isError || proposalsQ.isError;
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-6">
       <div className="flex items-center gap-3">
         <div className="h-10 w-10 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shadow-sm">
           <LayoutDashboard className="h-5 w-5 text-slate-700" />
         </div>
+
         <div>
           <div className="text-lg font-semibold text-slate-900">Dashboard</div>
           <div className="text-sm text-slate-600">
@@ -96,33 +178,41 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {dealsQ.isLoading && (
-        <div className="mt-6 text-slate-700">Carregando dados...</div>
-      )}
+      {loading && <div className="mt-6 text-slate-700">Carregando dados...</div>}
 
-      {dealsQ.isError && (
+      {error && (
         <div className="mt-6 text-red-600">Erro ao carregar dados do dashboard.</div>
       )}
 
-      {!dealsQ.isLoading && !dealsQ.isError && (
+      {!loading && !error && (
         <>
           {/* Cards resumo */}
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            {STAGES.map((s) => (
+            {STAGES.map((st) => (
               <div
-                key={s.key}
+                key={st.key}
                 className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
               >
-                <div className="text-xs text-slate-500">{s.label}</div>
+                <div className="text-xs text-slate-500">{st.label}</div>
+
                 <div className="mt-2 text-3xl font-semibold text-slate-900">
-                  {counts[s.key] || 0}
+                  {stats[st.key]?.count || 0}
                 </div>
+
+                <div className="mt-1 text-sm font-semibold text-slate-700">
+                  {brl(stats[st.key]?.total || 0)}
+                </div>
+
                 <div className="mt-3 text-xs text-slate-600 flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-slate-400" />
-                  oportunidades
+                  valor total na etapa
                 </div>
               </div>
             ))}
+          </div>
+
+          <div className="mt-4 text-sm text-slate-700">
+            <span className="font-semibold">Total geral do funil:</span> {brl(grandTotal)}
           </div>
 
           {/* Últimos movimentos */}
@@ -147,12 +237,15 @@ export default function Dashboard() {
                         <div className="text-sm font-semibold text-slate-900 truncate">
                           {d.title}
                         </div>
+
                         <div className="mt-1 text-xs text-slate-600">
                           Etapa: <span className="font-semibold">{stageLabel(d.stage)}</span>
                           {" • "}Construtora:{" "}
                           <span className="font-semibold">
                             {d.account_name || `#${d.account}`}
                           </span>
+                          {" • "}Valor:{" "}
+                          <span className="font-semibold">{brl(effectiveDealValue(d))}</span>
                         </div>
 
                         <div className="mt-1 text-xs text-slate-600 inline-flex items-center gap-2">
@@ -183,7 +276,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Próximas atividades (placeholder para endpoint agregado) */}
+            {/* Próximas atividades */}
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="text-sm font-semibold text-slate-900">Próximas atividades</div>
               <div className="text-xs text-slate-500 mt-1">
