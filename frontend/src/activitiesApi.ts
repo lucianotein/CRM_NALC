@@ -1,4 +1,5 @@
-import { api } from "./api";
+// frontend/src/activitiesApi.ts
+import { api, ensureCsrf } from "./api";
 
 export type ActivityType =
   | "VISITA"
@@ -16,7 +17,7 @@ export type Activity = {
   type: ActivityType;
   status: ActivityStatus;
 
-  occurred_at: string | null; // quando aconteceu (DONE)
+  occurred_at: string | null;   // quando aconteceu (DONE)
   scheduled_for: string | null; // quando está agendado (PENDING)
 
   result: string;
@@ -27,33 +28,51 @@ export type Activity = {
 };
 
 export async function listActivities(dealId: number): Promise<Activity[]> {
-  const { data } = await api.get(`/activities/`, { params: { deal: dealId } });
+  const { data } = await api.get(`/activities/`, {
+    params: { deal: dealId },
+  });
   return data;
 }
 
 export async function createActivity(
   payload: Partial<Activity> & { deal: number }
 ): Promise<Activity> {
+  await ensureCsrf();
   const { data } = await api.post(`/activities/`, payload);
   return data;
 }
 
-// ✅ novos endpoints (que você criou no backend)
 export async function markActivityDone(activityId: number): Promise<Activity> {
+  await ensureCsrf();
   const { data } = await api.post(`/activities/${activityId}/mark-done/`);
   return data;
 }
 
 export async function markActivityPending(activityId: number): Promise<Activity> {
+  await ensureCsrf();
   const { data } = await api.post(`/activities/${activityId}/mark-pending/`);
   return data;
 }
 
-// ✅ compromissos do dia (home/dashboard vai usar isso depois)
 export async function listCommitments(date?: string): Promise<Activity[]> {
-  // date: "YYYY-MM-DD"
   const { data } = await api.get(`/activities/commitments/`, {
     params: date ? { date } : undefined,
   });
+  return data;
+}
+
+export async function rescheduleActivity(payload: {
+  activityId: number;
+  scheduled_for: string;
+  note?: string;
+}): Promise<Activity> {
+  await ensureCsrf();
+  const { data } = await api.post(
+    `/activities/${payload.activityId}/reschedule/`,
+    {
+      scheduled_for: payload.scheduled_for,
+      note: payload.note || "",
+    }
+  );
   return data;
 }

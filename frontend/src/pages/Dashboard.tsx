@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { listDeals } from "../dealsApi";
 import type { DealStage } from "../types";
 import { listAllProposals, type Proposal } from "../proposalsApi";
+import { listCommitments, type Activity } from "../activitiesApi";
 
 import {
   LayoutDashboard,
@@ -13,6 +14,8 @@ import {
   ArrowRight,
   TrendingUp,
   Clock,
+  ClipboardList,
+  CalendarClock,
 } from "lucide-react";
 
 const STAGES: { key: DealStage; label: string }[] = [
@@ -32,6 +35,18 @@ function stageLabel(s: string) {
     FECHADO_GANHO: "Fechado",
     PERDIDO: "Perdido",
     PAUSADO: "Pausado",
+  };
+  return map[s] || s;
+}
+
+function activityTypeLabel(s: string) {
+  const map: Record<string, string> = {
+    VISITA: "Visita",
+    WHATSAPP: "WhatsApp",
+    LIGACAO: "Ligação",
+    REUNIAO: "Reunião",
+    EMAIL: "E-mail",
+    TAREFA: "Tarefa",
   };
   return map[s] || s;
 }
@@ -57,15 +72,31 @@ function toNumber(v: any): number {
   return Number.isFinite(n) ? n : NaN;
 }
 
+function fmtDT(s?: string | null) {
+  if (!s) return "-";
+  try {
+    return new Date(s).toLocaleString("pt-BR");
+  } catch {
+    return s;
+  }
+}
+
 export default function Dashboard() {
   const dealsQ = useQuery({ queryKey: ["deals"], queryFn: listDeals });
+
   const proposalsQ = useQuery({
     queryKey: ["proposals"],
     queryFn: listAllProposals,
   });
 
+  const commitmentsQ = useQuery({
+    queryKey: ["commitments-today"],
+    queryFn: () => listCommitments(),
+  });
+
   const deals = dealsQ.data || [];
   const proposals = proposalsQ.data || [];
+  const commitments = commitmentsQ.data || [];
 
   const proposalsByDeal = useMemo(() => {
     const map: Record<number, Proposal[]> = {};
@@ -76,7 +107,6 @@ export default function Dashboard() {
       (map[dealId] ||= []).push(p);
     }
 
-    // deixa ordenado da mais antiga para a mais nova
     for (const dealId of Object.keys(map)) {
       map[Number(dealId)].sort((a: any, b: any) => {
         const ta = a?.created_at ? new Date(a.created_at).getTime() : 0;
@@ -88,6 +118,14 @@ export default function Dashboard() {
 
     return map;
   }, [proposals]);
+
+  const dealById = useMemo(() => {
+    const map: Record<number, any> = {};
+    for (const d of deals as any[]) {
+      map[d.id] = d;
+    }
+    return map;
+  }, [deals]);
 
   function leadValue(d: any): number {
     const v =
@@ -112,7 +150,7 @@ export default function Dashboard() {
     return Number.isFinite(n) ? n : NaN;
   }
 
-  // ✅ Regra nova:
+  // Regra:
   // - se tiver proposta: usa o valor da ÚLTIMA proposta
   // - se não tiver proposta: usa o valor do lead
   function effectiveDealValue(d: any): number {
@@ -156,8 +194,11 @@ export default function Dashboard() {
       .slice(0, 6);
   }, [deals]);
 
-  const loading = dealsQ.isLoading || proposalsQ.isLoading;
-  const error = dealsQ.isError || proposalsQ.isError;
+  const loading =
+    dealsQ.isLoading || proposalsQ.isLoading || commitmentsQ.isLoading;
+
+  const error =
+    dealsQ.isError || proposalsQ.isError || commitmentsQ.isError;
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-6">
@@ -227,7 +268,8 @@ export default function Dashboard() {
           </div>
 
           <div className="mt-4 text-sm text-slate-700">
-            <span className="font-semibold">Total geral do funil:</span> {brl(grandTotal)}
+            <span className="font-semibold">Total geral do funil:</span>{" "}
+            {brl(grandTotal)}
           </div>
 
           <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
@@ -256,7 +298,8 @@ export default function Dashboard() {
                           </div>
 
                           <div className="mt-1 text-xs text-slate-600">
-                            Etapa: <span className="font-semibold">{stageLabel(d.stage)}</span>
+                            Etapa:{" "}
+                            <span className="font-semibold">{stageLabel(d.stage)}</span>
                             {" • "}Construtora:{" "}
                             <span className="font-semibold">
                               {d.account_name || `#${d.account}`}
@@ -298,17 +341,71 @@ export default function Dashboard() {
             </div>
 
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="text-sm font-semibold text-slate-900">Próximas atividades</div>
+              <div className="text-sm font-semibold text-slate-900">
+                Próximas atividades
+              </div>
               <div className="text-xs text-slate-500 mt-1">
-                (Vamos puxar isso do backend sem N+1 requests)
+                Compromissos pendentes do dia
               </div>
 
-              <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                Aqui vai ficar a lista de compromissos (PENDENTES) ordenados por data.
-                <div className="mt-2 text-xs text-slate-600">
-                  Próximo passo recomendado: criar um endpoint <b>/dashboard/</b> que devolve
-                  “propostas”, “pendências” e “totais” num único request.
-                </div>
+              <div className="mt-4 grid gap-3">
+                {commitments.map((a: Activity) => {
+                  const deal = dealById[a.deal];
+
+                  return (
+                    <Link
+                      key={a.id}
+                      to={`/deals/${a.deal}`}
+                      className="rounded-2xl border border-slate-200 bg-white p-4 hover:bg-slate-50 transition"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-slate-900 truncate">
+                            {deal?.title || `Oportunidade #${a.deal}`}
+                          </div>
+
+                          <div className="mt-1 text-xs text-slate-600">
+                            Tipo:{" "}
+                            <span className="font-semibold">
+                              {activityTypeLabel(a.type)}
+                            </span>
+                            {" • "}Construtora:{" "}
+                            <span className="font-semibold">
+                              {deal?.account_name || `#${deal?.account ?? "-"}`}
+                            </span>
+                          </div>
+
+                          <div className="mt-1 text-xs text-slate-600 inline-flex items-center gap-2">
+                            <CalendarClock className="h-3.5 w-3.5 text-slate-400" />
+                            Agendado para:{" "}
+                            <span className="font-semibold">
+                              {fmtDT(a.scheduled_for)}
+                            </span>
+                          </div>
+
+                          {a.result ? (
+                            <div className="mt-1 text-xs text-slate-600">
+                              Resultado:{" "}
+                              <span className="font-semibold">{a.result}</span>
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div className="shrink-0">
+                          <span className="inline-flex items-center gap-1 text-sm text-slate-700">
+                            Ver <ArrowRight className="h-4 w-4" />
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+
+                {commitments.length === 0 && (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    Nenhuma atividade pendente para hoje.
+                  </div>
+                )}
               </div>
             </div>
           </div>
