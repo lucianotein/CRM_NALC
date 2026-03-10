@@ -14,7 +14,6 @@ import {
   ArrowRight,
   TrendingUp,
   Clock,
-  ClipboardList,
   CalendarClock,
 } from "lucide-react";
 
