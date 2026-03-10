@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { listAllProposals, type Proposal } from "../proposalsApi";
 
 import {
   createContact,
@@ -46,6 +47,12 @@ function formatBRL(v: unknown) {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function toNumber(v: unknown): number {
+  if (v === null || v === undefined || v === "") return NaN;
+  const n = typeof v === "number" ? v : Number(String(v).replace(",", "."));
+  return Number.isFinite(n) ? n : NaN;
+}
+
 export default function AccountDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -62,6 +69,10 @@ export default function AccountDetail() {
   const contactsQ = useQuery({ queryKey: ["contacts"], queryFn: listContacts });
   const projectsQ = useQuery({ queryKey: ["projects"], queryFn: listProjects });
   const dealsQ = useQuery({ queryKey: ["deals"], queryFn: listDeals });
+  const proposalsQ = useQuery({
+    queryKey: ["proposals"],
+    queryFn: listAllProposals,
+  });
 
   const contacts = useMemo(
     () => (contactsQ.data || []).filter((c: any) => c.account === accountId),
@@ -77,6 +88,19 @@ export default function AccountDetail() {
     () => (dealsQ.data || []).filter((d: any) => d.account === accountId),
     [dealsQ.data, accountId]
   );
+
+  const proposalsByDeal = useMemo(() => {
+    const map: Record<number, Proposal[]> = {};
+
+    for (const p of proposalsQ.data || []) {
+      const dealId = Number(p.deal);
+      if (!Number.isFinite(dealId)) continue;
+      if (!map[dealId]) map[dealId] = [];
+      map[dealId].push(p);
+    }
+
+    return map;
+  }, [proposalsQ.data]);
 
   const [openContact, setOpenContact] = useState(false);
   const [openProject, setOpenProject] = useState(false);
@@ -109,6 +133,7 @@ export default function AccountDetail() {
     onSuccess: async () => {
       setOpenDeal(false);
       await qc.invalidateQueries({ queryKey: ["deals"] });
+      await qc.invalidateQueries({ queryKey: ["proposals"] });
     },
   });
 
@@ -130,6 +155,7 @@ export default function AccountDetail() {
       await qc.invalidateQueries({ queryKey: ["contacts"] });
       await qc.invalidateQueries({ queryKey: ["projects"] });
       await qc.invalidateQueries({ queryKey: ["deals"] });
+      await qc.invalidateQueries({ queryKey: ["proposals"] });
       navigate("/accounts");
     },
   });
@@ -177,11 +203,19 @@ export default function AccountDetail() {
   const a: any = accQ.data;
 
   const totalPipeline = deals.reduce((acc: number, d: any) => {
+    const proposals = proposalsByDeal[d.id] || [];
+
+    if (proposals.length > 0) {
+      const totalProps = proposals.reduce((sum, p) => {
+        const n = toNumber(p.valor_total);
+        return Number.isFinite(n) ? sum + n : sum;
+      }, 0);
+
+      return acc + totalProps;
+    }
+
     const rawValue = d.valor_total ?? d.value ?? d.amount ?? d.valor ?? null;
-    const n =
-      rawValue === null || rawValue === undefined || rawValue === ""
-        ? NaN
-        : Number(String(rawValue).replace(",", "."));
+    const n = toNumber(rawValue);
     return Number.isFinite(n) ? acc + n : acc;
   }, 0);
 
@@ -198,14 +232,12 @@ export default function AccountDetail() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Top header */}
       <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur">
         <div className="mx-auto max-w-6xl px-6 py-4">
           <div className="flex items-center gap-3">
             <Link
               to="/accounts"
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm
-                         hover:bg-slate-50 transition"
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50 transition"
               title="Voltar"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -241,8 +273,7 @@ export default function AccountDetail() {
             <div className="ml-auto flex items-center gap-2">
               <button
                 onClick={() => setOpenEditAccount(true)}
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800
-                           hover:bg-slate-50 transition focus:outline-none focus:ring-4 focus:ring-slate-200"
+                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition focus:outline-none focus:ring-4 focus:ring-slate-200"
               >
                 <Pencil className="h-4 w-4" />
                 Editar
@@ -250,12 +281,10 @@ export default function AccountDetail() {
 
               <button
                 onClick={() => setOpenDeal(true)}
-                className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white
-                           hover:bg-slate-800 active:bg-slate-950 transition
-                           focus:outline-none focus:ring-4 focus:ring-slate-200"
+                className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 active:bg-slate-950 transition focus:outline-none focus:ring-4 focus:ring-slate-200"
               >
                 <Plus className="h-4 w-4" />
-                Nova oportunidade
+                Cadastrar Lead
               </button>
             </div>
           </div>
@@ -269,9 +298,7 @@ export default function AccountDetail() {
         </div>
       </div>
 
-      {/* Content */}
       <div className="mx-auto max-w-6xl px-6 py-6">
-        {/* Summary cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="text-xs text-slate-500">Oportunidades</div>
@@ -303,9 +330,7 @@ export default function AccountDetail() {
           </div>
         </div>
 
-        {/* Sections */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Contatos */}
           <SectionCard
             title="Contatos"
             icon={<UserRound className="h-4 w-4 text-slate-700" />}
@@ -343,8 +368,7 @@ export default function AccountDetail() {
                     <div className="shrink-0 flex items-center gap-2">
                       <button
                         onClick={() => setEditContact(c)}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold
-                                   hover:bg-slate-50 transition"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold hover:bg-slate-50 transition"
                         title="Editar contato"
                       >
                         <Pencil className="h-4 w-4" />
@@ -357,8 +381,7 @@ export default function AccountDetail() {
                           if (!ok) return;
                           mutDeleteContact.mutate(c.id);
                         }}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700
-                                   hover:bg-red-50 transition"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 transition"
                         title="Excluir contato"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -373,7 +396,6 @@ export default function AccountDetail() {
             </div>
           </SectionCard>
 
-          {/* Empreendimentos */}
           <SectionCard
             title="Empreendimentos"
             icon={<Layers3 className="h-4 w-4 text-slate-700" />}
@@ -404,8 +426,7 @@ export default function AccountDetail() {
                     <div className="shrink-0 flex items-center gap-2">
                       <button
                         onClick={() => setEditProject(p)}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold
-                                   hover:bg-slate-50 transition"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold hover:bg-slate-50 transition"
                         title="Editar empreendimento"
                       >
                         <Pencil className="h-4 w-4" />
@@ -420,8 +441,7 @@ export default function AccountDetail() {
                           if (!ok) return;
                           mutDeleteProject.mutate(p.id);
                         }}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700
-                                   hover:bg-red-50 transition"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 transition"
                         title="Excluir empreendimento"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -436,25 +456,25 @@ export default function AccountDetail() {
             </div>
           </SectionCard>
 
-          {/* Oportunidades */}
           <div className="lg:col-span-2">
             <SectionCard
               title="Oportunidades"
               icon={<BadgeDollarSign className="h-4 w-4 text-slate-700" />}
-              actionLabel="Nova oportunidade"
+              actionLabel="Cadastrar Lead"
               onAction={() => setOpenDeal(true)}
             >
               <div className="grid gap-3">
                 {deals.map((d: any) => {
-                  const rawValue = d.valor_total ?? d.value ?? d.amount ?? d.valor ?? null;
-                  const brl = formatBRL(rawValue);
+                  const proposals = proposalsByDeal[d.id] || [];
+                  const rawLeadValue =
+                    d.valor_total ?? d.value ?? d.amount ?? d.valor ?? null;
+                  const leadBRL = formatBRL(rawLeadValue);
 
                   return (
                     <Link
                       key={d.id}
                       to={`/deals/${d.id}`}
-                      className="group block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm
-                                 hover:shadow-md hover:border-slate-300 transition"
+                      className="group block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md hover:border-slate-300 transition"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -463,13 +483,30 @@ export default function AccountDetail() {
                           </div>
                           <div className="mt-1 text-xs text-slate-600">
                             Etapa:{" "}
-                            <span className="font-semibold text-slate-800">{d.stage || "-"}</span>
+                            <span className="font-semibold text-slate-800">
+                              {d.stage || "-"}
+                            </span>
                           </div>
                         </div>
 
                         <div className="shrink-0 text-right">
-                          <div className="text-xs text-slate-500">Valor</div>
-                          <div className="text-sm font-semibold text-slate-900">{brl || "-"}</div>
+                          <div className="text-xs text-slate-500">
+                            {proposals.length > 0 ? "Propostas" : "Lead"}
+                          </div>
+
+                          {proposals.length > 0 ? (
+                            <div className="mt-1 flex flex-col items-end gap-1">
+                              {proposals.map((p, idx) => (
+                                <div key={p.id} className="text-sm font-semibold text-slate-900">
+                                  P{idx + 1}: {formatBRL(p.valor_total) || "-"}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-sm font-semibold text-slate-900">
+                              {leadBRL || "-"}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </Link>
@@ -482,8 +519,6 @@ export default function AccountDetail() {
           </div>
         </div>
       </div>
-
-      {/* -------------------- Modais -------------------- */}
 
       {openEditAccount && (
         <Modal title="Editar Construtora" onClose={() => setOpenEditAccount(false)}>
@@ -572,8 +607,6 @@ export default function AccountDetail() {
   );
 }
 
-/* -------------------- UI helpers -------------------- */
-
 function SectionCard({
   title,
   icon,
@@ -597,8 +630,7 @@ function SectionCard({
 
         <button
           onClick={onAction}
-          className="ml-auto inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white
-                     hover:bg-slate-800 transition focus:outline-none focus:ring-4 focus:ring-slate-200"
+          className="ml-auto inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 transition focus:outline-none focus:ring-4 focus:ring-slate-200"
         >
           <Plus className="h-4 w-4" />
           {actionLabel}
@@ -617,8 +649,6 @@ function EmptyState({ text }: { text: string }) {
     </div>
   );
 }
-
-/* -------------------- Forms -------------------- */
 
 function AccountEditForm({
   initial,
@@ -717,8 +747,7 @@ function AccountEditForm({
         type="button"
         onClick={onDelete}
         disabled={loading}
-        className="inline-flex items-center justify-center gap-2 w-full rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700
-                   hover:bg-red-50 transition disabled:opacity-60 disabled:cursor-not-allowed"
+        className="inline-flex items-center justify-center gap-2 w-full rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50 transition disabled:opacity-60 disabled:cursor-not-allowed"
       >
         <Trash2 className="h-4 w-4" />
         Excluir construtora
@@ -1057,7 +1086,7 @@ function DealForm({
         e.preventDefault();
         onSubmit({
           title,
-          value: value ? Number(String(value).replace(",", ".")) : null,
+          valor_total: value ? Number(String(value).replace(",", ".")) : null,
         });
       }}
       className="grid gap-4"
@@ -1114,10 +1143,7 @@ function PrimaryButton({
   return (
     <button
       disabled={disabled}
-      className="mt-1 inline-flex items-center justify-center gap-2 w-full rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white
-                 hover:bg-slate-800 active:bg-slate-950 transition
-                 disabled:opacity-60 disabled:cursor-not-allowed
-                 focus:outline-none focus:ring-4 focus:ring-slate-200"
+      className="mt-1 inline-flex items-center justify-center gap-2 w-full rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 active:bg-slate-950 transition disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-4 focus:ring-slate-200"
     >
       {loading ? (
         <>
@@ -1130,8 +1156,6 @@ function PrimaryButton({
     </button>
   );
 }
-
-/* -------------------- Modal -------------------- */
 
 function Modal({
   title,
@@ -1155,8 +1179,7 @@ function Modal({
           <div className="text-base font-semibold text-slate-900">{title}</div>
           <button
             onClick={onClose}
-            className="ml-auto inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm
-                       hover:bg-slate-50 transition"
+            className="ml-auto inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50 transition"
           >
             <X className="h-4 w-4" />
             Fechar

@@ -28,7 +28,6 @@ import {
 import { listProjects } from "../crmApi";
 
 import {
-  ChevronLeft,
   Plus,
   Upload,
   FileText,
@@ -192,24 +191,27 @@ function StagePill({ stage }: { stage: DealStage }) {
 function StatusPill({ status }: { status: string }) {
   const base =
     "text-[11px] px-2.5 py-1 rounded-full border inline-flex items-center gap-1 font-semibold";
-  if (status === "PENDING")
+  if (status === "PENDING") {
     return (
       <span className={`${base} bg-amber-50 border-amber-200 text-amber-800`}>
         PENDENTE
       </span>
     );
-  if (status === "DONE")
+  }
+  if (status === "DONE") {
     return (
       <span className={`${base} bg-emerald-50 border-emerald-200 text-emerald-800`}>
         FEITO
       </span>
     );
-  if (status === "CANCELED")
+  }
+  if (status === "CANCELED") {
     return (
       <span className={`${base} bg-slate-50 border-slate-200 text-slate-600`}>
         CANCELADO
       </span>
     );
+  }
   return (
     <span className={`${base} bg-slate-50 border-slate-200 text-slate-700`}>
       {status}
@@ -218,7 +220,7 @@ function StatusPill({ status }: { status: string }) {
 }
 
 /** ===========================
- * UI classes (garante botões legíveis)
+ * UI classes
  * =========================== */
 
 const btnBase =
@@ -231,10 +233,6 @@ const btnPrimary =
 const btnSecondary =
   btnBase +
   " border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 active:bg-slate-100";
-
-const btnGhost =
-  btnBase +
-  " bg-slate-100 text-slate-800 hover:bg-slate-200 active:bg-slate-300";
 
 const inputCls =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 " +
@@ -506,10 +504,33 @@ export default function DealDetail() {
       {/* Topbar */}
       <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur">
         <div className="mx-auto max-w-6xl px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Link to="/deals" className={btnSecondary}>
-              <ChevronLeft className="h-4 w-4" />
+          {/* Breadcrumb */}
+          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+            <Link to="/deals" className="hover:text-slate-900 font-medium">
               Kanban
+            </Link>
+
+            <span className="text-slate-400">/</span>
+
+            <Link
+              to={`/accounts/${(d as any).account}`}
+              className="hover:text-slate-900 font-medium"
+            >
+              {(d as any).account_name || `Construtora #${(d as any).account}`}
+            </Link>
+
+            <span className="text-slate-400">/</span>
+
+            <span className="text-slate-900 font-semibold truncate">{d.title}</span>
+          </div>
+
+          <div className="mt-3 flex items-center gap-3">
+            <Link
+              to={`/accounts/${(d as any).account}`}
+              className={btnSecondary}
+            >
+              <Building2 className="h-4 w-4" />
+              Retornar para Construtora
             </Link>
 
             <div className="min-w-0">
@@ -521,10 +542,13 @@ export default function DealDetail() {
               </div>
 
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
-                <span className="inline-flex items-center gap-1">
+                <Link
+                  to={`/accounts/${(d as any).account}`}
+                  className="inline-flex items-center gap-1 hover:text-slate-900 text-slate-600"
+                >
                   <Building2 className="h-3.5 w-3.5 text-slate-400" />
                   {(d as any).account_name || `#${(d as any).account}`}
-                </span>
+                </Link>
 
                 {(d as any).project ? (
                   <span className="inline-flex items-center gap-1">
@@ -730,7 +754,7 @@ export default function DealDetail() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="text-sm font-semibold text-slate-900">
-                            {ATT_TYPE_LABEL[a.type] || a.type}
+                            {ATT_TYPE_LABEL[a.type as keyof typeof ATT_TYPE_LABEL] || a.type}
                             {a.version_label ? (
                               <span className="text-xs text-slate-500"> • {a.version_label}</span>
                             ) : null}
@@ -899,8 +923,7 @@ export default function DealDetail() {
                   onChange={(e) =>
                     updateStageMut.mutate({ stage: e.target.value as DealStage })
                   }
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900
-                             outline-none focus:ring-4 focus:ring-slate-200 focus:border-slate-300"
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:ring-4 focus:ring-slate-200 focus:border-slate-300"
                 >
                   <option value="LEAD">Lead</option>
                   <option value="CONTATO">Contato</option>
@@ -913,7 +936,11 @@ export default function DealDetail() {
               </div>
             </Card>
 
-            <Card title="Ações rápidas" icon={<Plus className="h-4 w-4 text-slate-700" />} subtitle="Operações comuns">
+            <Card
+              title="Ações rápidas"
+              icon={<Plus className="h-4 w-4 text-slate-700" />}
+              subtitle="Operações comuns"
+            >
               <div className="grid gap-2">
                 <button onClick={() => setOpenProposal(true)} className={btnPrimary}>
                   <Plus className="h-4 w-4" />
@@ -938,13 +965,19 @@ export default function DealDetail() {
       {/* Modals */}
       {openAct && (
         <Modal title="Registrar atividade" onClose={() => setOpenAct(false)}>
-          <ActivityForm loading={createActMut.isPending} onSubmit={(payload) => createActMut.mutate({ ...payload, deal: dealId })} />
+          <ActivityForm
+            loading={createActMut.isPending}
+            onSubmit={(payload) => createActMut.mutate({ ...payload, deal: dealId })}
+          />
         </Modal>
       )}
 
       {openUpload && (
         <Modal title="Anexar arquivo" onClose={() => setOpenUpload(false)}>
-          <UploadForm loading={uploadMut.isPending} onSubmit={(payload) => uploadMut.mutate({ ...payload, deal: dealId })} />
+          <UploadForm
+            loading={uploadMut.isPending}
+            onSubmit={(payload) => uploadMut.mutate({ ...payload, deal: dealId })}
+          />
         </Modal>
       )}
 
@@ -1116,7 +1149,11 @@ function UploadForm({
       className="grid gap-4"
     >
       <Field label="Tipo">
-        <select value={type} onChange={(e) => setType(e.target.value as AttachmentType)} className={inputCls}>
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value as AttachmentType)}
+          className={inputCls}
+        >
           <option value="OUTRO">Outro</option>
           <option value="MEMORIAL">Memorial</option>
           <option value="CONTRATO">Contrato</option>
@@ -1125,11 +1162,20 @@ function UploadForm({
       </Field>
 
       <Field label="Versão (opcional)">
-        <input value={version} onChange={(e) => setVersion(e.target.value)} placeholder="Ex: v1, v2, revA..." className={inputCls} />
+        <input
+          value={version}
+          onChange={(e) => setVersion(e.target.value)}
+          placeholder="Ex: v1, v2, revA..."
+          className={inputCls}
+        />
       </Field>
 
       <Field label="Arquivo">
-        <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900" />
+        <input
+          type="file"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900"
+        />
         <div className="text-[11px] text-slate-500">
           PDF, DOCX, imagens… (backend salva em <b>media/deals/&lt;id&gt;/</b>)
         </div>
@@ -1173,7 +1219,9 @@ function ActivityForm({
         if (isCommitment) {
           const iso = toIsoFromLocalDT(scheduledFor);
           if (!iso) return alert("Data/hora inválida.");
-          if (new Date(iso).getTime() < Date.now()) return alert("Compromisso precisa ser no futuro.");
+          if (new Date(iso).getTime() < Date.now()) {
+            return alert("Compromisso precisa ser no futuro.");
+          }
 
           onSubmit({
             type,
@@ -1199,7 +1247,11 @@ function ActivityForm({
     >
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
         <label className="flex items-center gap-2 text-sm text-slate-900">
-          <input type="checkbox" checked={isCommitment} onChange={(e) => setIsCommitment(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={isCommitment}
+            onChange={(e) => setIsCommitment(e.target.checked)}
+          />
           <span className="font-semibold">Agendar como compromisso (data futura)</span>
         </label>
         <div className="mt-1 text-xs text-slate-600">
@@ -1208,7 +1260,11 @@ function ActivityForm({
       </div>
 
       <Field label="Tipo">
-        <select value={type} onChange={(e) => setType(e.target.value as ActivityType)} className={inputCls}>
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value as ActivityType)}
+          className={inputCls}
+        >
           <option value="VISITA">Visita</option>
           <option value="LIGACAO">Ligação</option>
           <option value="WHATSAPP">WhatsApp</option>
@@ -1220,20 +1276,42 @@ function ActivityForm({
 
       {isCommitment ? (
         <Field label="Agendar para">
-          <input type="datetime-local" value={scheduledFor} onChange={(e) => setScheduledFor(e.target.value)} className={inputCls} required />
+          <input
+            type="datetime-local"
+            value={scheduledFor}
+            onChange={(e) => setScheduledFor(e.target.value)}
+            className={inputCls}
+            required
+          />
         </Field>
       ) : (
         <Field label="Data/Hora que aconteceu">
-          <input type="datetime-local" value={occurredAt} onChange={(e) => setOccurredAt(e.target.value)} className={inputCls} />
+          <input
+            type="datetime-local"
+            value={occurredAt}
+            onChange={(e) => setOccurredAt(e.target.value)}
+            className={inputCls}
+          />
         </Field>
       )}
 
       <Field label="Resultado (curto)">
-        <input value={result} onChange={(e) => setResult(e.target.value)} placeholder="Ex: Cliente pediu proposta com permuta" className={inputCls} />
+        <input
+          value={result}
+          onChange={(e) => setResult(e.target.value)}
+          placeholder="Ex: Cliente pediu proposta com permuta"
+          className={inputCls}
+        />
       </Field>
 
       <Field label="Observações">
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={5} placeholder="Detalhes / próximos passos..." className={inputCls} />
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={5}
+          placeholder="Detalhes / próximos passos..."
+          className={inputCls}
+        />
       </Field>
 
       <PrimaryButton loading={loading} disabled={loading}>
@@ -1297,11 +1375,20 @@ function ProposalForm({
       className="grid gap-4"
     >
       <Field label="Versão">
-        <input value={versionLabel} onChange={(e) => setVersionLabel(e.target.value)} placeholder="Ex: v1, v2, revA..." className={inputCls} />
+        <input
+          value={versionLabel}
+          onChange={(e) => setVersionLabel(e.target.value)}
+          placeholder="Ex: v1, v2, revA..."
+          className={inputCls}
+        />
       </Field>
 
       <Field label="Status">
-        <select value={status} onChange={(e) => setStatus(e.target.value as ProposalStatus)} className={inputCls}>
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value as ProposalStatus)}
+          className={inputCls}
+        >
           <option value="DRAFT">Rascunho</option>
           <option value="SENT">Enviada</option>
           <option value="ACCEPTED">Aceita</option>
@@ -1328,7 +1415,9 @@ function ProposalForm({
                     checked={checked}
                     onChange={(e) =>
                       setSelectedProjects((prev) =>
-                        e.target.checked ? [...prev, p.id] : prev.filter((x) => x !== p.id)
+                        e.target.checked
+                          ? [...prev, p.id]
+                          : prev.filter((x) => x !== p.id)
                       )
                     }
                   />
@@ -1342,30 +1431,53 @@ function ProposalForm({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Valor total">
-          <input value={valorTotal} onChange={(e) => setValorTotal(e.target.value)} placeholder="Ex: 250000,50" className={inputCls} />
+          <input
+            value={valorTotal}
+            onChange={(e) => setValorTotal(e.target.value)}
+            placeholder="Ex: 250000,50"
+            className={inputCls}
+          />
         </Field>
         <Field label="Entrada">
-          <input value={valorEntrada} onChange={(e) => setValorEntrada(e.target.value)} placeholder="Ex: 50000" className={inputCls} />
+          <input
+            value={valorEntrada}
+            onChange={(e) => setValorEntrada(e.target.value)}
+            placeholder="Ex: 50000"
+            className={inputCls}
+          />
         </Field>
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
         <label className="flex items-center gap-2 text-sm text-slate-900">
-          <input type="checkbox" checked={temPermuta} onChange={(e) => setTemPermuta(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={temPermuta}
+            onChange={(e) => setTemPermuta(e.target.checked)}
+          />
           <span className="font-semibold">Tem permuta?</span>
         </label>
 
         {temPermuta && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
             <Field label="Tipo">
-              <select value={permutaTipo} onChange={(e) => setPermutaTipo(e.target.value)} className={inputCls}>
+              <select
+                value={permutaTipo}
+                onChange={(e) => setPermutaTipo(e.target.value)}
+                className={inputCls}
+              >
                 <option value="PARCIAL">Parcial</option>
                 <option value="TOTAL">Total</option>
               </select>
             </Field>
 
             <Field label="Valor estimado da permuta">
-              <input value={valorPermuta} onChange={(e) => setValorPermuta(e.target.value)} placeholder="Ex: 120000" className={inputCls} />
+              <input
+                value={valorPermuta}
+                onChange={(e) => setValorPermuta(e.target.value)}
+                placeholder="Ex: 120000"
+                className={inputCls}
+              />
             </Field>
           </div>
         )}
@@ -1373,22 +1485,42 @@ function ProposalForm({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Entrega da obra (opcional)">
-          <input type="date" value={obraEntrega} onChange={(e) => setObraEntrega(e.target.value)} className={inputCls} />
+          <input
+            type="date"
+            value={obraEntrega}
+            onChange={(e) => setObraEntrega(e.target.value)}
+            className={inputCls}
+          />
         </Field>
         <Field label="Entrega dos elevadores (opcional)">
-          <input type="date" value={elevEntrega} onChange={(e) => setElevEntrega(e.target.value)} className={inputCls} />
+          <input
+            type="date"
+            value={elevEntrega}
+            onChange={(e) => setElevEntrega(e.target.value)}
+            className={inputCls}
+          />
         </Field>
       </div>
 
       <Field label="Arquivo da proposta (opcional)">
-        <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900" />
+        <input
+          type="file"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900"
+        />
         <div className="text-[11px] text-slate-500">
           Se enviar aqui, cria a proposta e já anexa como <b>PROPOSTA</b>.
         </div>
       </Field>
 
       <Field label="Observações">
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={5} placeholder="Condições, escopo, prazos..." className={inputCls} />
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={5}
+          placeholder="Condições, escopo, prazos..."
+          className={inputCls}
+        />
       </Field>
 
       <PrimaryButton loading={loading} disabled={loading}>
@@ -1423,11 +1555,23 @@ function RescheduleForm({
       className="grid gap-4"
     >
       <Field label="Nova data/hora">
-        <input type="datetime-local" value={localDT} onChange={(e) => setLocalDT(e.target.value)} className={inputCls} required />
+        <input
+          type="datetime-local"
+          value={localDT}
+          onChange={(e) => setLocalDT(e.target.value)}
+          className={inputCls}
+          required
+        />
       </Field>
 
       <Field label="Comentário (opcional)">
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={4} placeholder="Ex: remarcado..." className={inputCls} />
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={4}
+          placeholder="Ex: remarcado..."
+          className={inputCls}
+        />
       </Field>
 
       <PrimaryButton loading={loading} disabled={loading}>

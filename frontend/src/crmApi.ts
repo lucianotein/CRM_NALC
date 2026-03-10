@@ -1,4 +1,3 @@
-// frontend/src/crmApi.ts
 import { api, ensureCsrf } from "./api";
 import type { DealStage } from "./types";
 
@@ -140,8 +139,7 @@ export async function createDeal(payload: {
   account: number;
   project?: number | null;
   stage?: DealStage;
-  // se você quiser passar valor_total direto:
-  // valor_total?: number | null;
+  valor_total?: number | null;
 }): Promise<any> {
   await ensureCsrf();
   const { data } = await api.post("/deals/", payload);

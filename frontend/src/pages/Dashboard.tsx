@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -37,18 +37,17 @@ function stageLabel(s: string) {
 }
 
 const brl = (n: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
-    Number.isFinite(n) ? n : 0
-  );
+  new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(Number.isFinite(n) ? n : 0);
 
 function toNumber(v: any): number {
   if (v === null || v === undefined || v === "") return NaN;
   if (typeof v === "number") return v;
 
-  // tolera "1.234,56" ou "1234.56"
   const s = String(v).trim();
 
-  // se tem vírgula, tratamos como pt-BR: remove milhares e troca vírgula por ponto
   if (s.includes(",")) {
     const n = Number(s.replace(/\./g, "").replace(",", "."));
     return Number.isFinite(n) ? n : NaN;
@@ -60,23 +59,36 @@ function toNumber(v: any): number {
 
 export default function Dashboard() {
   const dealsQ = useQuery({ queryKey: ["deals"], queryFn: listDeals });
-  const proposalsQ = useQuery({ queryKey: ["proposals"], queryFn: listAllProposals });
+  const proposalsQ = useQuery({
+    queryKey: ["proposals"],
+    queryFn: listAllProposals,
+  });
 
   const deals = dealsQ.data || [];
   const proposals = proposalsQ.data || [];
 
-  // Agrupa propostas por deal
   const proposalsByDeal = useMemo(() => {
-    const m: Record<number, Proposal[]> = {};
+    const map: Record<number, Proposal[]> = {};
+
     for (const p of proposals) {
       const dealId = Number((p as any).deal);
       if (!Number.isFinite(dealId)) continue;
-      (m[dealId] ||= []).push(p);
+      (map[dealId] ||= []).push(p);
     }
-    return m;
+
+    // deixa ordenado da mais antiga para a mais nova
+    for (const dealId of Object.keys(map)) {
+      map[Number(dealId)].sort((a: any, b: any) => {
+        const ta = a?.created_at ? new Date(a.created_at).getTime() : 0;
+        const tb = b?.created_at ? new Date(b.created_at).getTime() : 0;
+        if (ta !== tb) return ta - tb;
+        return Number(a?.id || 0) - Number(b?.id || 0);
+      });
+    }
+
+    return map;
   }, [proposals]);
 
-  // Valor do LEAD (quando não tem proposta)
   function leadValue(d: any): number {
     const v =
       d.valor_total ??
@@ -91,21 +103,24 @@ export default function Dashboard() {
     return Number.isFinite(n) ? n : 0;
   }
 
-  // ✅ Regra:
-  // - se tiver proposta(s): soma de valor_total das propostas
-  // - senão: valor do lead
-  function effectiveDealValue(d: any): number {
+  function latestProposalValue(d: any): number {
     const ps = proposalsByDeal[d.id] || [];
-    const sumProps = ps.reduce((acc, p) => {
-      const n = toNumber((p as any).valor_total);
-      return Number.isFinite(n) ? acc + n : acc;
-    }, 0);
+    if (ps.length === 0) return NaN;
 
-    if (sumProps > 0) return sumProps;
+    const last = ps[ps.length - 1];
+    const n = toNumber((last as any).valor_total);
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  // ✅ Regra nova:
+  // - se tiver proposta: usa o valor da ÚLTIMA proposta
+  // - se não tiver proposta: usa o valor do lead
+  function effectiveDealValue(d: any): number {
+    const lastProposal = latestProposalValue(d);
+    if (Number.isFinite(lastProposal)) return lastProposal;
     return leadValue(d);
   }
 
-  // Stats por etapa: count + total (usando effectiveDealValue)
   const stats = useMemo(() => {
     type Stat = { count: number; total: number };
     const s: Record<string, Stat> = {};
@@ -120,6 +135,7 @@ export default function Dashboard() {
       s[stage].count += 1;
       s[stage].total += effectiveDealValue(d);
     }
+
     return s;
   }, [deals, proposalsByDeal]);
 
@@ -186,7 +202,6 @@ export default function Dashboard() {
 
       {!loading && !error && (
         <>
-          {/* Cards resumo */}
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             {STAGES.map((st) => (
               <div
@@ -205,7 +220,7 @@ export default function Dashboard() {
 
                 <div className="mt-3 text-xs text-slate-600 flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-slate-400" />
-                  valor total na etapa
+                  valor da última proposta ou lead
                 </div>
               </div>
             ))}
@@ -215,7 +230,6 @@ export default function Dashboard() {
             <span className="font-semibold">Total geral do funil:</span> {brl(grandTotal)}
           </div>
 
-          {/* Últimos movimentos */}
           <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="text-sm font-semibold text-slate-900">
@@ -226,47 +240,54 @@ export default function Dashboard() {
               </div>
 
               <div className="mt-4 grid gap-3">
-                {latestDeals.map((d: any) => (
-                  <Link
-                    key={d.id}
-                    to={`/deals/${d.id}`}
-                    className="rounded-2xl border border-slate-200 bg-white p-4 hover:bg-slate-50 transition"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-slate-900 truncate">
-                          {d.title}
+                {latestDeals.map((d: any) => {
+                  const hasProposal = (proposalsByDeal[d.id] || []).length > 0;
+
+                  return (
+                    <Link
+                      key={d.id}
+                      to={`/deals/${d.id}`}
+                      className="rounded-2xl border border-slate-200 bg-white p-4 hover:bg-slate-50 transition"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-slate-900 truncate">
+                            {d.title}
+                          </div>
+
+                          <div className="mt-1 text-xs text-slate-600">
+                            Etapa: <span className="font-semibold">{stageLabel(d.stage)}</span>
+                            {" • "}Construtora:{" "}
+                            <span className="font-semibold">
+                              {d.account_name || `#${d.account}`}
+                            </span>
+                            {" • "}
+                            {hasProposal ? "Última proposta" : "Lead"}:{" "}
+                            <span className="font-semibold">
+                              {brl(effectiveDealValue(d))}
+                            </span>
+                          </div>
+
+                          <div className="mt-1 text-xs text-slate-600 inline-flex items-center gap-2">
+                            <Clock className="h-3.5 w-3.5 text-slate-400" />
+                            Último contato:{" "}
+                            <span className="font-semibold">
+                              {d.last_contact_at
+                                ? new Date(d.last_contact_at).toLocaleString("pt-BR")
+                                : "-"}
+                            </span>
+                          </div>
                         </div>
 
-                        <div className="mt-1 text-xs text-slate-600">
-                          Etapa: <span className="font-semibold">{stageLabel(d.stage)}</span>
-                          {" • "}Construtora:{" "}
-                          <span className="font-semibold">
-                            {d.account_name || `#${d.account}`}
-                          </span>
-                          {" • "}Valor:{" "}
-                          <span className="font-semibold">{brl(effectiveDealValue(d))}</span>
-                        </div>
-
-                        <div className="mt-1 text-xs text-slate-600 inline-flex items-center gap-2">
-                          <Clock className="h-3.5 w-3.5 text-slate-400" />
-                          Último contato:{" "}
-                          <span className="font-semibold">
-                            {d.last_contact_at
-                              ? new Date(d.last_contact_at).toLocaleString("pt-BR")
-                              : "-"}
+                        <div className="shrink-0">
+                          <span className="inline-flex items-center gap-1 text-sm text-slate-700">
+                            Ver <ArrowRight className="h-4 w-4" />
                           </span>
                         </div>
                       </div>
-
-                      <div className="shrink-0">
-                        <span className="inline-flex items-center gap-1 text-sm text-slate-700">
-                          Ver <ArrowRight className="h-4 w-4" />
-                        </span>
-                      </div>
-                    </div>
-                  </Link>
-                ))}
+                    </Link>
+                  );
+                })}
 
                 {latestDeals.length === 0 && (
                   <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
@@ -276,7 +297,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Próximas atividades */}
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="text-sm font-semibold text-slate-900">Próximas atividades</div>
               <div className="text-xs text-slate-500 mt-1">
