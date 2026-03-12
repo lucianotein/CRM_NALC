@@ -15,6 +15,11 @@ import {
   TrendingUp,
   Clock,
   CalendarClock,
+  Wallet,
+  Send,
+  CheckCircle2,
+  FileText,
+  XCircle,
 } from "lucide-react";
 
 const STAGES: { key: DealStage; label: string }[] = [
@@ -78,6 +83,34 @@ function fmtDT(s?: string | null) {
   } catch {
     return s;
   }
+}
+
+function proposalStatusLabel(status: string) {
+  const map: Record<string, string> = {
+    DRAFT: "Rascunho",
+    SENT: "Enviada",
+    ACCEPTED: "Aceita",
+    REJECTED: "Recusada",
+  };
+  return map[status] || status;
+}
+
+function StatLine({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-xs text-slate-600">
+      <span className="text-slate-400">{icon}</span>
+      <span>{label}:</span>
+      <span className="font-semibold text-slate-900">{value}</span>
+    </div>
+  );
 }
 
 export default function Dashboard() {
@@ -149,9 +182,6 @@ export default function Dashboard() {
     return Number.isFinite(n) ? n : NaN;
   }
 
-  // Regra:
-  // - se tiver proposta: usa o valor da ÚLTIMA proposta
-  // - se não tiver proposta: usa o valor do lead
   function effectiveDealValue(d: any): number {
     const lastProposal = latestProposalValue(d);
     if (Number.isFinite(lastProposal)) return lastProposal;
@@ -159,18 +189,88 @@ export default function Dashboard() {
   }
 
   const stats = useMemo(() => {
-    type Stat = { count: number; total: number };
+    type ProposalBreakdown = {
+      DRAFT: number;
+      SENT: number;
+      ACCEPTED: number;
+      REJECTED: number;
+    };
+
+    type Stat = {
+      count: number;
+      total: number;
+      proposalTotals: ProposalBreakdown;
+      proposalCounts: ProposalBreakdown;
+    };
+
+    const emptyBreakdown = (): ProposalBreakdown => ({
+      DRAFT: 0,
+      SENT: 0,
+      ACCEPTED: 0,
+      REJECTED: 0,
+    });
+
     const s: Record<string, Stat> = {};
 
-    for (const st of STAGES) s[st.key] = { count: 0, total: 0 };
-    s["PERDIDO"] = { count: 0, total: 0 };
-    s["PAUSADO"] = { count: 0, total: 0 };
+    for (const st of STAGES) {
+      s[st.key] = {
+        count: 0,
+        total: 0,
+        proposalTotals: emptyBreakdown(),
+        proposalCounts: emptyBreakdown(),
+      };
+    }
+
+    s["PERDIDO"] = {
+      count: 0,
+      total: 0,
+      proposalTotals: emptyBreakdown(),
+      proposalCounts: emptyBreakdown(),
+    };
+
+    s["PAUSADO"] = {
+      count: 0,
+      total: 0,
+      proposalTotals: emptyBreakdown(),
+      proposalCounts: emptyBreakdown(),
+    };
 
     for (const d of deals as any[]) {
       const stage = d.stage || "LEAD";
-      if (!s[stage]) s[stage] = { count: 0, total: 0 };
+      if (!s[stage]) {
+        s[stage] = {
+          count: 0,
+          total: 0,
+          proposalTotals: emptyBreakdown(),
+          proposalCounts: emptyBreakdown(),
+        };
+      }
+
       s[stage].count += 1;
       s[stage].total += effectiveDealValue(d);
+
+      const ps = proposalsByDeal[d.id] || [];
+      for (const p of ps as any[]) {
+        const status = p.status || "DRAFT";
+        const valor = Number(toNumber(p.valor_total) || 0);
+
+        if (status === "DRAFT") {
+          s[stage].proposalTotals.DRAFT += valor;
+          s[stage].proposalCounts.DRAFT += 1;
+        }
+        if (status === "SENT") {
+          s[stage].proposalTotals.SENT += valor;
+          s[stage].proposalCounts.SENT += 1;
+        }
+        if (status === "ACCEPTED") {
+          s[stage].proposalTotals.ACCEPTED += valor;
+          s[stage].proposalCounts.ACCEPTED += 1;
+        }
+        if (status === "REJECTED") {
+          s[stage].proposalTotals.REJECTED += valor;
+          s[stage].proposalCounts.REJECTED += 1;
+        }
+      }
     }
 
     return s;
@@ -193,6 +293,49 @@ export default function Dashboard() {
       .slice(0, 6);
   }, [deals]);
 
+  const builderRanking = useMemo(() => {
+    const rankingMap: Record<
+      string,
+      {
+        accountId: number | null;
+        accountName: string;
+        sentValue: number;
+        sentCount: number;
+      }
+    > = {};
+
+    for (const p of proposals as any[]) {
+      if (p.status !== "SENT") continue;
+
+      const deal = dealById[Number(p.deal)];
+      if (!deal) continue;
+
+      const accountId = Number(deal.account || 0) || null;
+      const accountName = deal.account_name || `Construtora #${deal.account}`;
+      const key = String(accountId ?? accountName);
+      const valor = Number(toNumber(p.valor_total) || 0);
+
+      if (!rankingMap[key]) {
+        rankingMap[key] = {
+          accountId,
+          accountName,
+          sentValue: 0,
+          sentCount: 0,
+        };
+      }
+
+      rankingMap[key].sentValue += valor;
+      rankingMap[key].sentCount += 1;
+    }
+
+    return Object.values(rankingMap)
+      .sort((a, b) => {
+        if (b.sentValue !== a.sentValue) return b.sentValue - a.sentValue;
+        return b.sentCount - a.sentCount;
+      })
+      .slice(0, 5);
+  }, [proposals, dealById]);
+
   const loading =
     dealsQ.isLoading || proposalsQ.isLoading || commitmentsQ.isLoading;
 
@@ -200,7 +343,7 @@ export default function Dashboard() {
     dealsQ.isError || proposalsQ.isError || commitmentsQ.isError;
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-6">
+    <div className="mx-auto max-w-7xl px-6 py-6">
       <div className="flex items-center gap-3">
         <div className="h-10 w-10 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shadow-sm">
           <LayoutDashboard className="h-5 w-5 text-slate-700" />
@@ -209,7 +352,7 @@ export default function Dashboard() {
         <div>
           <div className="text-lg font-semibold text-slate-900">Dashboard</div>
           <div className="text-sm text-slate-600">
-            Visão rápida do funil e últimos movimentos
+            Visão executiva do funil, propostas e atividades
           </div>
         </div>
 
@@ -242,42 +385,144 @@ export default function Dashboard() {
 
       {!loading && !error && (
         <>
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            {STAGES.map((st) => (
-              <div
-                key={st.key}
-                className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
-              >
-                <div className="text-xs text-slate-500">{st.label}</div>
+          {/* CARDS POR ETAPA */}
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+            {STAGES.map((st) => {
+              const item = stats[st.key];
+              return (
+                <div
+                  key={st.key}
+                  className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">
+                        {st.label}
+                      </div>
+                      <div className="mt-2 text-3xl font-semibold text-slate-900">
+                        {item?.count || 0}
+                      </div>
+                    </div>
 
-                <div className="mt-2 text-3xl font-semibold text-slate-900">
-                  {stats[st.key]?.count || 0}
+                    <div className="rounded-2xl bg-slate-50 border border-slate-200 p-2">
+                      <TrendingUp className="h-4 w-4 text-slate-500" />
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <div className="text-xs text-slate-500">Valor da etapa</div>
+                    <div className="text-base font-semibold text-slate-900">
+                      {brl(item?.total || 0)}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
+                    <StatLine
+                      label="Rascunho"
+                      value={`${brl(item?.proposalTotals.DRAFT || 0)} • ${item?.proposalCounts.DRAFT || 0}`}
+                      icon={<FileText className="h-3.5 w-3.5" />}
+                    />
+                    <StatLine
+                      label="Enviada"
+                      value={`${brl(item?.proposalTotals.SENT || 0)} • ${item?.proposalCounts.SENT || 0}`}
+                      icon={<Send className="h-3.5 w-3.5" />}
+                    />
+                    <StatLine
+                      label="Aceita"
+                      value={`${brl(item?.proposalTotals.ACCEPTED || 0)} • ${item?.proposalCounts.ACCEPTED || 0}`}
+                      icon={<CheckCircle2 className="h-3.5 w-3.5" />}
+                    />
+                    <StatLine
+                      label="Recusada"
+                      value={`${brl(item?.proposalTotals.REJECTED || 0)} • ${item?.proposalCounts.REJECTED || 0}`}
+                      icon={<XCircle className="h-3.5 w-3.5" />}
+                    />
+                  </div>
                 </div>
+              );
+            })}
+          </div>
 
-                <div className="mt-1 text-sm font-semibold text-slate-700">
-                  {brl(stats[st.key]?.total || 0)}
+          {/* LINHA EXECUTIVA */}
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center">
+                  <Wallet className="h-5 w-5 text-slate-600" />
                 </div>
-
-                <div className="mt-3 text-xs text-slate-600 flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-slate-400" />
-                  valor da última proposta ou lead
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">
+                    Total geral do funil
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Considerando último valor de proposta ou valor do lead
+                  </div>
                 </div>
               </div>
-            ))}
+
+              <div className="mt-4 text-2xl font-semibold text-slate-900">
+                {brl(grandTotal)}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center">
+                  <Building2 className="h-5 w-5 text-slate-600" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">
+                    Ranking de construtoras
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Maiores valores em propostas enviadas
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                {builderRanking.map((item, idx) => (
+                  <div
+                    key={`${item.accountId}-${idx}`}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-900 truncate">
+                          {idx + 1}. {item.accountName}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-600">
+                          Propostas enviadas:{" "}
+                          <span className="font-semibold text-slate-900">
+                            {item.sentCount}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-sm font-semibold text-slate-900 shrink-0">
+                        {brl(item.sentValue)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {builderRanking.length === 0 && (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    Nenhuma proposta enviada até o momento.
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="mt-4 text-sm text-slate-700">
-            <span className="font-semibold">Total geral do funil:</span>{" "}
-            {brl(grandTotal)}
-          </div>
-
+          {/* CONTEÚDO */}
           <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="text-sm font-semibold text-slate-900">
                 Últimas oportunidades movimentadas
               </div>
               <div className="text-xs text-slate-500 mt-1">
-                Ordenado por último contato (quando existir)
+                Ordenado por último contato
               </div>
 
               <div className="mt-4 grid gap-3">

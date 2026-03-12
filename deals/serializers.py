@@ -73,3 +73,34 @@ class ProposalSerializer(serializers.ModelSerializer):
         model = Proposal
         fields = "__all__"
         read_only_fields = ("created_at", "created_by")
+
+    def _validate_year_month(self, value, field_label):
+        if value in (None, ""):
+            return ""
+
+        value = str(value).strip()
+
+        if len(value) != 7 or value[4] != "-":
+            raise serializers.ValidationError(
+                f"{field_label} deve estar no formato YYYY-MM."
+            )
+
+        ano = value[:4]
+        mes = value[5:7]
+
+        if not (ano.isdigit() and mes.isdigit()):
+            raise serializers.ValidationError(
+                f"{field_label} deve estar no formato YYYY-MM."
+            )
+
+        mes_int = int(mes)
+        if mes_int < 1 or mes_int > 12:
+            raise serializers.ValidationError(f"{field_label} com mês inválido.")
+
+        return value
+
+    def validate_obra_entrega_prevista(self, value):
+        return self._validate_year_month(value, "Entrega da obra")
+
+    def validate_elevador_entrega_prevista(self, value):
+        return self._validate_year_month(value, "Entrega dos elevadores")

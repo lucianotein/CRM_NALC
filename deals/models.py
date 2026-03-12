@@ -194,8 +194,8 @@ class Proposal(models.Model):
     permuta_tipo = models.CharField(max_length=20, blank=True, default="")
     valor_permuta = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
 
-    obra_entrega_prevista = models.DateField(null=True, blank=True)
-    elevador_entrega_prevista = models.DateField(null=True, blank=True)
+    obra_entrega_prevista = models.CharField(max_length=7, blank=True, default="")
+    elevador_entrega_prevista = models.CharField(max_length=7, blank=True, default="")
 
     notes = models.TextField(blank=True, default="")
 

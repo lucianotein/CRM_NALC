@@ -53,6 +53,36 @@ function toNumber(v: unknown): number {
   return Number.isFinite(n) ? n : NaN;
 }
 
+function formatMonthYear(value?: string | null) {
+  if (!value) return "";
+  const m = String(value).match(/^(\d{4})-(\d{2})$/);
+  if (!m) return value;
+  return `${m[2]}/${m[1]}`;
+}
+
+function parseMonthYearInput(value: string) {
+  const raw = String(value || "").trim();
+
+  if (!raw) return "";
+
+  const m = raw.match(/^(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+
+  const month = Number(m[1]);
+  const year = m[2];
+
+  if (month < 1 || month > 12) return null;
+
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+function normalizeMonthYearTyping(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 6);
+
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+}
+
 export default function AccountDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -414,7 +444,7 @@ export default function AccountDetail() {
                       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
                         <span className="inline-flex items-center gap-1">
                           <CalendarClock className="h-3.5 w-3.5 text-slate-400" />
-                          Entrega: {p.obra_entrega_prevista || "-"}
+                          Entrega: {formatMonthYear(p.obra_entrega_prevista) || "-"}
                         </span>
                         <span className="inline-flex items-center gap-1">
                           <MapPin className="h-3.5 w-3.5 text-slate-400" />
@@ -929,17 +959,26 @@ function ProjectForm({
   const [state, setState] = useState("PR");
   const [obra, setObra] = useState("");
 
-  const canSubmit = name.trim().length > 0 && !loading;
+  const obraParsed = parseMonthYearInput(obra);
+  const obraInvalid = obra.trim().length > 0 && obraParsed === null;
+
+  const canSubmit =
+    name.trim().length > 0 &&
+    !loading &&
+    !obraInvalid;
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
+
+        if (obraInvalid) return;
+
         onSubmit({
           name,
           city,
-          state,
-          obra_entrega_prevista: obra || null,
+          state: (state || "").toUpperCase().slice(0, 2),
+          obra_entrega_prevista: obraParsed || null,
           notes: "",
         });
       }}
@@ -976,13 +1015,20 @@ function ProjectForm({
         </Field>
       </div>
 
-      <Field label="Entrega obra (YYYY-MM-DD)">
-        <input
-          placeholder="2026-12-31"
-          value={obra}
-          onChange={(e) => setObra(e.target.value)}
-          className={inputCls}
-        />
+      <Field label="Entrega obra (MM/AAAA)">
+        <div className="grid gap-1">
+          <input
+            placeholder="12/2026"
+            value={obra}
+            onChange={(e) => setObra(normalizeMonthYearTyping(e.target.value))}
+            className={inputCls}
+          />
+          {obraInvalid && (
+            <div className="text-xs text-red-600">
+              Informe no formato MM/AAAA.
+            </div>
+          )}
+        </div>
       </Field>
 
       <PrimaryButton loading={loading} disabled={!canSubmit}>
@@ -991,6 +1037,7 @@ function ProjectForm({
     </form>
   );
 }
+
 
 function ProjectEditForm({
   initial,
@@ -1004,19 +1051,28 @@ function ProjectEditForm({
   const [name, setName] = useState(initial?.name || "");
   const [city, setCity] = useState(initial?.city || "");
   const [state, setState] = useState(initial?.state || "PR");
-  const [obra, setObra] = useState(initial?.obra_entrega_prevista || "");
+  const [obra, setObra] = useState(formatMonthYear(initial?.obra_entrega_prevista || ""));
 
-  const canSubmit = name.trim().length > 0 && !loading;
+  const obraParsed = parseMonthYearInput(obra);
+  const obraInvalid = obra.trim().length > 0 && obraParsed === null;
+
+  const canSubmit =
+    name.trim().length > 0 &&
+    !loading &&
+    !obraInvalid;
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
+
+        if (obraInvalid) return;
+
         onSubmit({
           name,
           city,
           state: (state || "").toUpperCase().slice(0, 2),
-          obra_entrega_prevista: obra || null,
+          obra_entrega_prevista: obraParsed || null,
         });
       }}
       className="grid gap-4"
@@ -1052,13 +1108,20 @@ function ProjectEditForm({
         </Field>
       </div>
 
-      <Field label="Entrega obra (YYYY-MM-DD)">
-        <input
-          placeholder="2026-12-31"
-          value={obra}
-          onChange={(e) => setObra(e.target.value)}
-          className={inputCls}
-        />
+      <Field label="Entrega obra (MM/AAAA)">
+        <div className="grid gap-1">
+          <input
+            placeholder="12/2026"
+            value={obra}
+            onChange={(e) => setObra(normalizeMonthYearTyping(e.target.value))}
+            className={inputCls}
+          />
+          {obraInvalid && (
+            <div className="text-xs text-red-600">
+              Informe no formato MM/AAAA.
+            </div>
+          )}
+        </div>
       </Field>
 
       <PrimaryButton loading={loading} disabled={!canSubmit}>
@@ -1067,6 +1130,7 @@ function ProjectEditForm({
     </form>
   );
 }
+
 
 function DealForm({
   loading,

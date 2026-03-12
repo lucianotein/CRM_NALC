@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Deal, DealStage } from "../types";
 import { api } from "../api";
 import { updateDealStage } from "../dealsApi";
+import ProposalForm from "../components/ProposalForm";
 
 import {
   createActivity,
@@ -86,10 +87,24 @@ function fmtDT(s?: string | null) {
   }
 }
 
+function formatMonthYear(value?: string | null) {
+  if (!value) return "";
+  const ym = String(value).match(/^(\d{4})-(\d{2})$/);
+  if (ym) return `${ym[2]}/${ym[1]}`;
+
+  const ymd = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (ymd) return `${ymd[2]}/${ymd[1]}`;
+
+  return String(value);
+}
+
 function fmtDate(s?: string | null) {
   if (!s) return "-";
+
+  const monthYear = formatMonthYear(s);
+  if (monthYear && monthYear !== s) return monthYear;
+
   try {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
     return new Date(s).toLocaleDateString("pt-BR");
   } catch {
     return s;
@@ -133,6 +148,34 @@ function nowLocalDT(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
     d.getHours()
   )}:${pad(d.getMinutes())}`;
+}
+
+function parseMonthYearInput(value: string) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const m = raw.match(/^(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+
+  const month = Number(m[1]);
+  const year = m[2];
+
+  if (month < 1 || month > 12) return null;
+
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+function normalizeMonthYearTyping(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 6);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+}
+
+function currentYearMonth() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
 }
 
 async function getDeal(id: number): Promise<DealWithExtras> {
@@ -191,6 +234,7 @@ function StagePill({ stage }: { stage: DealStage }) {
 function StatusPill({ status }: { status: string }) {
   const base =
     "text-[11px] px-2.5 py-1 rounded-full border inline-flex items-center gap-1 font-semibold";
+
   if (status === "PENDING") {
     return (
       <span className={`${base} bg-amber-50 border-amber-200 text-amber-800`}>
@@ -212,6 +256,7 @@ function StatusPill({ status }: { status: string }) {
       </span>
     );
   }
+
   return (
     <span className={`${base} bg-slate-50 border-slate-200 text-slate-700`}>
       {status}
@@ -237,6 +282,10 @@ const btnSecondary =
 const inputCls =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 " +
   "outline-none focus:ring-4 focus:ring-slate-200 focus:border-slate-300";
+
+const inputClsDisabled =
+  "w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-slate-600 placeholder:text-slate-400 " +
+  "outline-none cursor-not-allowed";
 
 /** ===========================
  * Page
@@ -285,11 +334,27 @@ export default function DealDetail() {
     },
   });
 
+  const updateDealTitleMut = useMutation({
+    mutationFn: async (title: string) => {
+      const { data } = await api.patch(`/deals/${dealId}/`, { title });
+      return data;
+    },
+    onSuccess: async () => {
+      setIsEditingTitle(false);
+      await qc.invalidateQueries({ queryKey: ["deal", dealId] });
+      await qc.invalidateQueries({ queryKey: ["deals"] });
+    },
+  });
+
   const [openAct, setOpenAct] = useState(false);
   const [openUpload, setOpenUpload] = useState(false);
   const [openProposal, setOpenProposal] = useState(false);
   const [openReschedule, setOpenReschedule] = useState(false);
   const [rescheduleAct, setRescheduleAct] = useState<any | null>(null);
+  const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
+
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
 
   const createActMut = useMutation({
     mutationFn: createActivity,
@@ -308,6 +373,8 @@ export default function DealDetail() {
       await qc.invalidateQueries({ queryKey: ["attachments", dealId] });
     },
   });
+
+  
 
   const rescheduleMut = useMutation({
     mutationFn: async (input: {
@@ -360,6 +427,46 @@ export default function DealDetail() {
       await qc.invalidateQueries({ queryKey: ["attachments", dealId] });
       await qc.invalidateQueries({ queryKey: ["deal", dealId] });
       await qc.invalidateQueries({ queryKey: ["deals"] });
+    },
+  });
+
+  const updateProposalStatusMut = useMutation({
+    mutationFn: async (input: { proposalId: number; status: ProposalStatus }) => {
+      const { data } = await api.patch(`/proposals/${input.proposalId}/`, {
+        status: input.status,
+      });
+      return data;
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["proposals", dealId] });
+    },
+  });
+
+  const updateProposalMut = useMutation({
+    mutationFn: async (input: {
+      proposalId: number;
+      proposal: Partial<Proposal>;
+      file?: File | null;
+    }) => {
+      const payload = { ...input.proposal } as any;
+      delete payload._file;
+      const { data } = await api.patch(`/proposals/${input.proposalId}/`, payload);
+
+      if (input.file) {
+        await uploadAttachment({
+          deal: dealId,
+          type: "PROPOSTA",
+          version_label: data.version_label || "",
+          file: input.file,
+        });
+      }
+
+      return data;
+    },
+    onSuccess: async () => {
+      setEditingProposal(null);
+      await qc.invalidateQueries({ queryKey: ["proposals", dealId] });
+      await qc.invalidateQueries({ queryKey: ["attachments", dealId] });
     },
   });
 
@@ -446,6 +553,28 @@ export default function DealDetail() {
     );
   }, [propsQ.data]);
 
+  const proposalSummary = useMemo(() => {
+    const base = {
+      total: 0,
+      DRAFT: 0,
+      SENT: 0,
+      ACCEPTED: 0,
+      REJECTED: 0,
+    };
+
+    for (const p of proposals) {
+      const valor = Number(p.valor_total || 0) || 0;
+      base.total += valor;
+
+      if (p.status === "DRAFT") base.DRAFT += valor;
+      if (p.status === "SENT") base.SENT += valor;
+      if (p.status === "ACCEPTED") base.ACCEPTED += valor;
+      if (p.status === "REJECTED") base.REJECTED += valor;
+    }
+
+    return base;
+  }, [proposals]);
+
   const accountIdForProjects = (dealQ.data as any)?.account ?? null;
 
   const accountProjects = useMemo(() => {
@@ -468,29 +597,45 @@ export default function DealDetail() {
   }
 
   if (dealQ.isLoading) return <div className="p-6 text-slate-700">Carregando...</div>;
-  if (dealQ.isError || !dealQ.data)
+  if (dealQ.isError || !dealQ.data) {
     return <div className="p-6 text-red-600">Oportunidade não encontrada.</div>;
+  }
 
   const d = dealQ.data;
   const valor = formatBRL((d as any).valor_total);
 
+  useEffect(() => {
+    if (d?.title) {
+      setTitleDraft(d.title);
+    }
+  }, [d?.title]);
+
   const busy =
     updateStageMut.isPending ||
+    updateDealTitleMut.isPending ||
     createActMut.isPending ||
     uploadMut.isPending ||
     createProposalMut.isPending ||
+    updateProposalMut.isPending ||
+    updateProposalStatusMut.isPending ||
     markDoneMut.isPending ||
     markPendingMut.isPending ||
     rescheduleMut.isPending;
 
   const busyText = updateStageMut.isPending
     ? "Atualizando etapa..."
+    : updateDealTitleMut.isPending
+    ? "Atualizando título..."
     : createActMut.isPending
     ? "Salvando atividade..."
     : uploadMut.isPending
     ? "Enviando arquivo..."
     : createProposalMut.isPending
     ? "Registrando proposta..."
+    : updateProposalMut.isPending
+    ? "Atualizando proposta..."
+    : updateProposalStatusMut.isPending
+    ? "Atualizando status da proposta..."
     : markDoneMut.isPending
     ? "Concluindo..."
     : markPendingMut.isPending
@@ -501,10 +646,8 @@ export default function DealDetail() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Topbar */}
       <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur">
         <div className="mx-auto max-w-6xl px-6 py-4">
-          {/* Breadcrumb */}
           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
             <Link to="/deals" className="hover:text-slate-900 font-medium">
               Kanban
@@ -525,19 +668,58 @@ export default function DealDetail() {
           </div>
 
           <div className="mt-3 flex items-center gap-3">
-            <Link
-              to={`/accounts/${(d as any).account}`}
-              className={btnSecondary}
-            >
+            <Link to={`/accounts/${(d as any).account}`} className={btnSecondary}>
               <Building2 className="h-4 w-4" />
               Retornar para Construtora
             </Link>
 
             <div className="min-w-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="text-lg font-semibold tracking-tight text-slate-900 truncate">
-                  {d.title}
-                </div>
+              <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                {isEditingTitle ? (
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <input
+                      value={titleDraft}
+                      onChange={(e) => setTitleDraft(e.target.value)}
+                      className="min-w-[260px] max-w-[420px] rounded-2xl border border-slate-200 bg-white px-4 py-2 text-base font-semibold text-slate-900 outline-none focus:ring-4 focus:ring-slate-200 focus:border-slate-300"
+                      placeholder="Título do lead"
+                    />
+                    <button
+                      onClick={() => {
+                        const t = titleDraft.trim();
+                        if (!t) return;
+                        updateDealTitleMut.mutate(t);
+                      }}
+                      className={btnPrimary}
+                      type="button"
+                    >
+                      Salvar
+                    </button>
+                    <button
+                      onClick={() => {
+                        setTitleDraft(d.title || "");
+                        setIsEditingTitle(false);
+                      }}
+                      className={btnSecondary}
+                      type="button"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-lg font-semibold tracking-tight text-slate-900 truncate">
+                      {d.title}
+                    </div>
+                    <button
+                      onClick={() => setIsEditingTitle(true)}
+                      className={btnSecondary}
+                      type="button"
+                    >
+                      Editar título
+                    </button>
+                  </>
+                )}
+
                 <StagePill stage={d.stage} />
               </div>
 
@@ -599,12 +781,9 @@ export default function DealDetail() {
         </div>
       </div>
 
-      {/* Content */}
       <div className="mx-auto max-w-6xl px-6 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
-          {/* LEFT */}
           <div className="grid gap-6">
-            {/* Propostas */}
             <Card
               title="Propostas"
               icon={<FileText className="h-4 w-4 text-slate-700" />}
@@ -637,12 +816,28 @@ export default function DealDetail() {
                             ) : null}
                           </div>
 
-                          <div className="mt-1 text-xs text-slate-600">
-                            Status:{" "}
-                            <span className="font-semibold text-slate-800">
-                              {PROPOSAL_STATUS_LABEL[p.status]}
-                            </span>{" "}
-                            • Criada em: {fmtDT(p.created_at)}
+                          <div className="mt-2 flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+                            <div className="text-xs text-slate-600">
+                              Criada em: {fmtDT(p.created_at)}
+                            </div>
+
+                            <div className="w-full md:w-[220px]">
+                              <select
+                                value={p.status}
+                                onChange={(e) =>
+                                  updateProposalStatusMut.mutate({
+                                    proposalId: p.id,
+                                    status: e.target.value as ProposalStatus,
+                                  })
+                                }
+                                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:ring-4 focus:ring-slate-200 focus:border-slate-300"
+                              >
+                                <option value="DRAFT">Rascunho</option>
+                                <option value="SENT">Enviada</option>
+                                <option value="ACCEPTED">Aceita</option>
+                                <option value="REJECTED">Recusada</option>
+                              </select>
+                            </div>
                           </div>
 
                           <div className="mt-2 text-xs text-slate-600">
@@ -703,6 +898,14 @@ export default function DealDetail() {
                               <Hash className="h-3.5 w-3.5 text-slate-400" /> #{p.id}
                             </span>
                           </div>
+                          <div className="mt-3">
+                            <button
+                              onClick={() => setEditingProposal(p)}
+                              className={btnSecondary}
+                            >
+                              Editar
+                            </button>
+                          </div>
 
                           {url ? (
                             <div className="mt-3 flex flex-col gap-2">
@@ -730,7 +933,6 @@ export default function DealDetail() {
               </div>
             </Card>
 
-            {/* Arquivos */}
             <Card
               title="Arquivos"
               icon={<Paperclip className="h-4 w-4 text-slate-700" />}
@@ -783,7 +985,6 @@ export default function DealDetail() {
               </div>
             </Card>
 
-            {/* Atividades */}
             <Card
               title="Atividades"
               icon={<ClipboardList className="h-4 w-4 text-slate-700" />}
@@ -882,7 +1083,6 @@ export default function DealDetail() {
             </Card>
           </div>
 
-          {/* RIGHT */}
           <div className="grid gap-6">
             <Card
               title="Resumo"
@@ -909,11 +1109,45 @@ export default function DealDetail() {
                   value={(d as any).last_contact_at ? fmtDT((d as any).last_contact_at) : "-"}
                   icon={<Clock className="h-4 w-4 text-slate-400" />}
                 />
-                <InfoRow
-                  label="Valor"
-                  value={valor || "-"}
-                  icon={<BadgeDollarSign className="h-4 w-4 text-slate-400" />}
-                />
+                <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="mt-0.5">
+                    <BadgeDollarSign className="h-4 w-4 text-slate-400" />
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="text-xs text-slate-500">Valor em propostas</div>
+                    <div className="text-sm font-semibold text-slate-900">
+                      {formatBRL(proposalSummary.total) || "-"}
+                    </div>
+
+                    <div className="mt-2 space-y-1 text-xs text-slate-600">
+                      <div>
+                        Rascunho:{" "}
+                        <span className="font-semibold text-slate-900">
+                          {formatBRL(proposalSummary.DRAFT) || "R$ 0,00"}
+                        </span>
+                      </div>
+                      <div>
+                        Enviada:{" "}
+                        <span className="font-semibold text-slate-900">
+                          {formatBRL(proposalSummary.SENT) || "R$ 0,00"}
+                        </span>
+                      </div>
+                      <div>
+                        Aceita:{" "}
+                        <span className="font-semibold text-slate-900">
+                          {formatBRL(proposalSummary.ACCEPTED) || "R$ 0,00"}
+                        </span>
+                      </div>
+                      <div>
+                        Recusada:{" "}
+                        <span className="font-semibold text-slate-900">
+                          {formatBRL(proposalSummary.REJECTED) || "R$ 0,00"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="mt-5">
@@ -962,7 +1196,6 @@ export default function DealDetail() {
         </div>
       </div>
 
-      {/* Modals */}
       {openAct && (
         <Modal title="Registrar atividade" onClose={() => setOpenAct(false)}>
           <ActivityForm
@@ -985,10 +1218,45 @@ export default function DealDetail() {
         <Modal title="Registrar proposta" onClose={() => setOpenProposal(false)}>
           <ProposalForm
             loading={createProposalMut.isPending}
-            projects={accountProjects.map((p) => ({ id: p.id, name: p.name }))}
+            projects={accountProjects.map((p) => ({
+              id: p.id,
+              name: p.name,
+              obra_entrega_prevista: p.obra_entrega_prevista,
+            }))}
+            submitLabel="Registrar proposta"
+            showFileField={true}
             onSubmit={(payload) =>
               createProposalMut.mutate({
                 proposal: { ...payload, deal: dealId },
+                file: (payload as any)._file || null,
+              })
+            }
+          />
+        </Modal>
+      )}
+
+      {editingProposal && (
+        <Modal
+          title={`Editar proposta${editingProposal.version_label ? ` • ${editingProposal.version_label}` : ""}`}
+          onClose={() => setEditingProposal(null)}
+        >
+          <ProposalForm
+            loading={updateProposalMut.isPending}
+            projects={accountProjects.map((p) => ({
+              id: p.id,
+              name: p.name,
+              obra_entrega_prevista: p.obra_entrega_prevista,
+            }))}
+            initialData={{
+              ...editingProposal,
+              projects: ((editingProposal as any).projects || []) as number[],
+            }}
+            submitLabel="Salvar alterações"
+            showFileField={true}
+            onSubmit={(payload) =>
+              updateProposalMut.mutate({
+                proposalId: editingProposal.id,
+                proposal: payload,
                 file: (payload as any)._file || null,
               })
             }
@@ -1321,214 +1589,6 @@ function ActivityForm({
   );
 }
 
-function ProposalForm({
-  loading,
-  projects,
-  onSubmit,
-}: {
-  loading: boolean;
-  projects: { id: number; name: string }[];
-  onSubmit: (payload: Partial<Proposal> & { _file?: File | null }) => void;
-}) {
-  const [versionLabel, setVersionLabel] = useState("v1");
-  const [status, setStatus] = useState<ProposalStatus>("DRAFT");
-
-  const [valorTotal, setValorTotal] = useState("");
-  const [valorEntrada, setValorEntrada] = useState("");
-
-  const [temPermuta, setTemPermuta] = useState(false);
-  const [permutaTipo, setPermutaTipo] = useState("PARCIAL");
-  const [valorPermuta, setValorPermuta] = useState("");
-
-  const [obraEntrega, setObraEntrega] = useState("");
-  const [elevEntrega, setElevEntrega] = useState("");
-
-  const [notes, setNotes] = useState("");
-  const [selectedProjects, setSelectedProjects] = useState<number[]>([]);
-  const [file, setFile] = useState<File | null>(null);
-
-  return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-
-        onSubmit({
-          version_label: versionLabel || "",
-          status,
-
-          valor_total: parseMoneyToNumberOrNull(valorTotal),
-          valor_entrada: parseMoneyToNumberOrNull(valorEntrada),
-
-          tem_permuta: temPermuta,
-          permuta_tipo: temPermuta ? (permutaTipo || "") : "",
-          valor_permuta: temPermuta ? parseMoneyToNumberOrNull(valorPermuta) : null,
-
-          obra_entrega_prevista: obraEntrega || null,
-          elevador_entrega_prevista: elevEntrega || null,
-
-          notes: notes || "",
-          projects: selectedProjects,
-
-          _file: file,
-        });
-      }}
-      className="grid gap-4"
-    >
-      <Field label="Versão">
-        <input
-          value={versionLabel}
-          onChange={(e) => setVersionLabel(e.target.value)}
-          placeholder="Ex: v1, v2, revA..."
-          className={inputCls}
-        />
-      </Field>
-
-      <Field label="Status">
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value as ProposalStatus)}
-          className={inputCls}
-        >
-          <option value="DRAFT">Rascunho</option>
-          <option value="SENT">Enviada</option>
-          <option value="ACCEPTED">Aceita</option>
-          <option value="REJECTED">Recusada</option>
-        </select>
-      </Field>
-
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <div className="font-semibold text-slate-900">Empreendimentos</div>
-        <div className="text-xs text-slate-600 mb-2">
-          Selecione 1 ou mais empreendimentos desta construtora.
-        </div>
-
-        {projects.length === 0 ? (
-          <div className="text-sm text-slate-600">Nenhum empreendimento cadastrado.</div>
-        ) : (
-          <div className="grid gap-2">
-            {projects.map((p) => {
-              const checked = selectedProjects.includes(p.id);
-              return (
-                <label key={p.id} className="flex items-center gap-2 text-sm text-slate-800">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(e) =>
-                      setSelectedProjects((prev) =>
-                        e.target.checked
-                          ? [...prev, p.id]
-                          : prev.filter((x) => x !== p.id)
-                      )
-                    }
-                  />
-                  <span>{p.name}</span>
-                </label>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Valor total">
-          <input
-            value={valorTotal}
-            onChange={(e) => setValorTotal(e.target.value)}
-            placeholder="Ex: 250000,50"
-            className={inputCls}
-          />
-        </Field>
-        <Field label="Entrada">
-          <input
-            value={valorEntrada}
-            onChange={(e) => setValorEntrada(e.target.value)}
-            placeholder="Ex: 50000"
-            className={inputCls}
-          />
-        </Field>
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <label className="flex items-center gap-2 text-sm text-slate-900">
-          <input
-            type="checkbox"
-            checked={temPermuta}
-            onChange={(e) => setTemPermuta(e.target.checked)}
-          />
-          <span className="font-semibold">Tem permuta?</span>
-        </label>
-
-        {temPermuta && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
-            <Field label="Tipo">
-              <select
-                value={permutaTipo}
-                onChange={(e) => setPermutaTipo(e.target.value)}
-                className={inputCls}
-              >
-                <option value="PARCIAL">Parcial</option>
-                <option value="TOTAL">Total</option>
-              </select>
-            </Field>
-
-            <Field label="Valor estimado da permuta">
-              <input
-                value={valorPermuta}
-                onChange={(e) => setValorPermuta(e.target.value)}
-                placeholder="Ex: 120000"
-                className={inputCls}
-              />
-            </Field>
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Entrega da obra (opcional)">
-          <input
-            type="date"
-            value={obraEntrega}
-            onChange={(e) => setObraEntrega(e.target.value)}
-            className={inputCls}
-          />
-        </Field>
-        <Field label="Entrega dos elevadores (opcional)">
-          <input
-            type="date"
-            value={elevEntrega}
-            onChange={(e) => setElevEntrega(e.target.value)}
-            className={inputCls}
-          />
-        </Field>
-      </div>
-
-      <Field label="Arquivo da proposta (opcional)">
-        <input
-          type="file"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900"
-        />
-        <div className="text-[11px] text-slate-500">
-          Se enviar aqui, cria a proposta e já anexa como <b>PROPOSTA</b>.
-        </div>
-      </Field>
-
-      <Field label="Observações">
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={5}
-          placeholder="Condições, escopo, prazos..."
-          className={inputCls}
-        />
-      </Field>
-
-      <PrimaryButton loading={loading} disabled={loading}>
-        Registrar proposta
-      </PrimaryButton>
-    </form>
-  );
-}
 
 /** ===========================
  * Reschedule
@@ -1595,19 +1655,21 @@ function Modal({
   onClose: () => void;
 }) {
   return (
-    <div onClick={onClose} className="fixed inset-0 bg-black/40 grid place-items-center p-4 z-50">
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl"
-      >
-        <div className="flex items-center gap-3 mb-5">
-          <div className="text-base font-semibold text-slate-900">{title}</div>
-          <button onClick={onClose} className={btnSecondary}>
-            <X className="h-4 w-4" />
-            Fechar
-          </button>
+    <div className="fixed inset-0 z-50 bg-black/40 p-4">
+      <div className="grid h-full place-items-center">
+        <div className="w-full max-w-3xl rounded-3xl border border-slate-200 bg-white shadow-2xl max-h-[92vh] overflow-hidden">
+          <div className="flex items-center gap-3 border-b border-slate-200 px-6 py-4">
+            <div className="text-base font-semibold text-slate-900">{title}</div>
+            <button onClick={onClose} className={btnSecondary + " ml-auto"}>
+              <X className="h-4 w-4" />
+              Fechar
+            </button>
+          </div>
+
+          <div className="overflow-y-auto px-6 py-5 max-h-[calc(92vh-80px)]">
+            {children}
+          </div>
         </div>
-        {children}
       </div>
     </div>
   );

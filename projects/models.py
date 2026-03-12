@@ -7,7 +7,7 @@ class Project(models.Model):
     city = models.CharField(max_length=120, blank=True, default="")
     state = models.CharField(max_length=2, blank=True, default="")
 
-    obra_entrega_prevista = models.DateField(null=True, blank=True)
+    obra_entrega_prevista = models.CharField(max_length=7, blank=True, default="")
     notes = models.TextField(blank=True, default="")
 
     created_at = models.DateTimeField(auto_now_add=True)

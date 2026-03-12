@@ -1,6 +1,12 @@
 import React from "react";
-import { Routes, Route, Navigate, Link, useNavigate } from "react-router-dom";
+import { Routes, Route, Navigate, Link, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import {
+  LayoutDashboard,
+  KanbanSquare,
+  Building2,
+  LogOut,
+} from "lucide-react";
 
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -12,6 +18,7 @@ import AccountsList from "./pages/AccountsList";
 import AccountDetail from "./pages/AccountDetail";
 
 import { api } from "./api";
+import nalcLogo from "./assets/nalc-logo.png";
 
 type Me = { id: number; username: string };
 
@@ -22,13 +29,21 @@ async function me(): Promise<Me> {
 
 function Protected({ children }: { children: React.ReactNode }) {
   const q = useQuery({ queryKey: ["me"], queryFn: me, retry: false });
-  if (q.isLoading) return <div className="p-6 text-slate-700">Carregando...</div>;
-  if (q.isError) return <Navigate to="/login" replace />;
+
+  if (q.isLoading) {
+    return <div className="p-6 text-slate-700">Carregando...</div>;
+  }
+
+  if (q.isError) {
+    return <Navigate to="/login" replace />;
+  }
+
   return <>{children}</>;
 }
 
 function Topbar() {
   const nav = useNavigate();
+  const location = useLocation();
   const meQ = useQuery({ queryKey: ["me"], queryFn: me, retry: false });
 
   async function handleLogout() {
@@ -40,34 +55,71 @@ function Topbar() {
     }
   }
 
-  const linkCls =
-    "text-sm font-medium text-slate-700 hover:text-slate-900 transition";
+  const isActive = (path: string) => {
+    if (path === "/") return location.pathname === "/";
+    return location.pathname.startsWith(path);
+  };
+
+  const navCls = (active: boolean) =>
+    [
+      "inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-medium transition",
+      active
+        ? "bg-red-50 text-[#d91f26] border border-red-100"
+        : "text-slate-700 hover:text-slate-900 hover:bg-slate-50 border border-transparent",
+    ].join(" ");
 
   return (
-    <div className="sticky top-0 z-40 border-b border-slate-200 bg-white/80 backdrop-blur">
-      <div className="mx-auto max-w-6xl px-6 py-3 flex items-center gap-5">
-        <div className="font-extrabold text-slate-900">CRM</div>
+    <div className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
+      <div className="mx-auto flex max-w-7xl items-center gap-4 px-6 py-3">
+        {/* Marca */}
+        <Link to="/" className="flex items-center gap-3 shrink-0">
+          <img
+            src={nalcLogo}
+            alt="Nalc"
+            className="h-12 w-12 rounded-2xl object-cover border border-slate-200 shadow-sm"
+          />
+          <div className="leading-tight">
+            <div className="text-sm font-extrabold tracking-tight text-slate-900">
+              CRM Nalc
+            </div>
+            <div className="text-[11px] text-slate-500">
+              Gestão Comercial
+            </div>
+          </div>
+        </Link>
 
-        <Link to="/" className={linkCls}>
-          Dashboard
-        </Link>
-        <Link to="/deals" className={linkCls}>
-          Kanban
-        </Link>
-        <Link to="/accounts" className={linkCls}>
-          Construtoras
-        </Link>
+        {/* Navegação */}
+        <div className="ml-4 flex items-center gap-2">
+          <Link to="/" className={navCls(isActive("/"))}>
+            <LayoutDashboard className="h-4 w-4" />
+            Dashboard
+          </Link>
 
+          <Link to="/deals" className={navCls(isActive("/deals"))}>
+            <KanbanSquare className="h-4 w-4" />
+            Kanban
+          </Link>
+
+          <Link to="/accounts" className={navCls(isActive("/accounts"))}>
+            <Building2 className="h-4 w-4" />
+            Construtoras
+          </Link>
+        </div>
+
+        {/* Usuário */}
         <div className="ml-auto flex items-center gap-3">
           {meQ.data ? (
-            <div className="text-sm text-slate-600">Olá, {meQ.data.username}</div>
+            <div className="hidden sm:block text-sm text-slate-600">
+              Olá, <span className="font-semibold text-slate-900">{meQ.data.username}</span>
+            </div>
           ) : null}
 
           <button
             onClick={handleLogout}
-            className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-800
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-800
                        hover:bg-slate-50 transition focus:outline-none focus:ring-4 focus:ring-slate-200"
           >
+            <LogOut className="h-4 w-4" />
             Sair
           </button>
         </div>
@@ -89,7 +141,6 @@ export default function App() {
               <>
                 <Topbar />
                 <Routes>
-                  {/* ✅ Página inicial vira Dashboard */}
                   <Route path="/" element={<Dashboard />} />
 
                   <Route path="/deals" element={<DealsKanban />} />
@@ -100,7 +151,11 @@ export default function App() {
 
                   <Route
                     path="*"
-                    element={<div className="p-6 text-slate-700">Página não encontrada.</div>}
+                    element={
+                      <div className="p-6 text-slate-700">
+                        Página não encontrada.
+                      </div>
+                    }
                   />
                 </Routes>
               </>
