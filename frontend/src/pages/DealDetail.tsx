@@ -553,19 +553,19 @@ export default function DealDetail() {
     return names || "-";
   }
 
+  const d = dealQ.data;
+  const valor = formatBRL((d as any)?.valor_total);
+
+  useEffect(() => {
+    if (dealQ.data?.title) {
+      setTitleDraft(dealQ.data.title);
+    }
+  }, [dealQ.data?.title]);
+
   if (dealQ.isLoading) return <div className="p-6 text-slate-700">Carregando...</div>;
   if (dealQ.isError || !dealQ.data) {
     return <div className="p-6 text-red-600">Oportunidade não encontrada.</div>;
   }
-
-  const d = dealQ.data;
-  const valor = formatBRL((d as any).valor_total);
-
-  useEffect(() => {
-    if (d?.title) {
-      setTitleDraft(d.title);
-    }
-  }, [d?.title]);
 
   const busy =
     updateStageMut.isPending ||
