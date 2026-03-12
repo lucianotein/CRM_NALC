@@ -85,16 +85,6 @@ function fmtDT(s?: string | null) {
   }
 }
 
-function proposalStatusLabel(status: string) {
-  const map: Record<string, string> = {
-    DRAFT: "Rascunho",
-    SENT: "Enviada",
-    ACCEPTED: "Aceita",
-    REJECTED: "Recusada",
-  };
-  return map[status] || status;
-}
-
 function StatLine({
   label,
   value,

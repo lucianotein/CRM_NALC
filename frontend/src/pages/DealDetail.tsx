@@ -122,13 +122,6 @@ function pickLatestAttachment(items: any[]) {
   )[0];
 }
 
-function parseMoneyToNumberOrNull(s: string) {
-  const t = (s || "").trim();
-  if (!t) return null;
-  const n = Number(t.replace(/\./g, "").replace(",", "."));
-  if (!Number.isFinite(n)) return null;
-  return n;
-}
 
 function toIsoFromLocalDT(local: string): string | null {
   const t = (local || "").trim();
@@ -150,33 +143,6 @@ function nowLocalDT(): string {
   )}:${pad(d.getMinutes())}`;
 }
 
-function parseMonthYearInput(value: string) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-
-  const m = raw.match(/^(\d{2})\/(\d{4})$/);
-  if (!m) return null;
-
-  const month = Number(m[1]);
-  const year = m[2];
-
-  if (month < 1 || month > 12) return null;
-
-  return `${year}-${String(month).padStart(2, "0")}`;
-}
-
-function normalizeMonthYearTyping(value: string) {
-  const digits = value.replace(/\D/g, "").slice(0, 6);
-  if (digits.length <= 2) return digits;
-  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-}
-
-function currentYearMonth() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
-}
 
 async function getDeal(id: number): Promise<DealWithExtras> {
   const { data } = await api.get(`/deals/${id}/`);
@@ -203,12 +169,6 @@ const ATT_TYPE_LABEL: Record<AttachmentType, string> = {
   OUTRO: "Outro",
 };
 
-const PROPOSAL_STATUS_LABEL: Record<ProposalStatus, string> = {
-  DRAFT: "Rascunho",
-  SENT: "Enviada",
-  ACCEPTED: "Aceita",
-  REJECTED: "Recusada",
-};
 
 function stageLabel(stage: DealStage) {
   const map: Record<DealStage, string> = {
@@ -283,9 +243,6 @@ const inputCls =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 " +
   "outline-none focus:ring-4 focus:ring-slate-200 focus:border-slate-300";
 
-const inputClsDisabled =
-  "w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-slate-600 placeholder:text-slate-400 " +
-  "outline-none cursor-not-allowed";
 
 /** ===========================
  * Page
