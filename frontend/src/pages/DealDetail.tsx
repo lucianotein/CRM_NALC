@@ -553,9 +553,6 @@ export default function DealDetail() {
     return names || "-";
   }
 
-  const d = dealQ.data;
-  const valor = formatBRL((d as any)?.valor_total);
-
   useEffect(() => {
     if (dealQ.data?.title) {
       setTitleDraft(dealQ.data.title);
@@ -566,6 +563,9 @@ export default function DealDetail() {
   if (dealQ.isError || !dealQ.data) {
     return <div className="p-6 text-red-600">Oportunidade não encontrada.</div>;
   }
+
+  const d = dealQ.data;
+  const valor = formatBRL((d as any).valor_total);
 
   const busy =
     updateStageMut.isPending ||
