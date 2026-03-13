@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -16,10 +16,8 @@ import {
   Clock,
   CalendarClock,
   Wallet,
-  Send,
-  CheckCircle2,
-  FileText,
-  XCircle,
+  Search,
+  Layers3,
 } from "lucide-react";
 
 const STAGES: { key: DealStage; label: string }[] = [
@@ -85,22 +83,17 @@ function fmtDT(s?: string | null) {
   }
 }
 
-function StatLine({
-  label,
-  value,
-  icon,
-}: {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-2 text-xs text-slate-600">
-      <span className="text-slate-400">{icon}</span>
-      <span>{label}:</span>
-      <span className="font-semibold text-slate-900">{value}</span>
-    </div>
-  );
+function getDealProjectNames(d: any): string[] {
+  if (Array.isArray(d?.project_names) && d.project_names.length > 0) {
+    return d.project_names.filter(Boolean);
+  }
+  if (d?.project_name) return [String(d.project_name)];
+  return [];
+}
+
+function dealProjectsText(d: any): string {
+  const names = getDealProjectNames(d);
+  return names.length > 0 ? names.join(", ") : "-";
 }
 
 export default function Dashboard() {
@@ -115,6 +108,8 @@ export default function Dashboard() {
     queryKey: ["commitments-today"],
     queryFn: () => listCommitments(),
   });
+
+  const [search, setSearch] = useState("");
 
   const deals = dealsQ.data || [];
   const proposals = proposalsQ.data || [];
@@ -179,88 +174,23 @@ export default function Dashboard() {
   }
 
   const stats = useMemo(() => {
-    type ProposalBreakdown = {
-      DRAFT: number;
-      SENT: number;
-      ACCEPTED: number;
-      REJECTED: number;
-    };
-
-    type Stat = {
-      count: number;
-      total: number;
-      proposalTotals: ProposalBreakdown;
-      proposalCounts: ProposalBreakdown;
-    };
-
-    const emptyBreakdown = (): ProposalBreakdown => ({
-      DRAFT: 0,
-      SENT: 0,
-      ACCEPTED: 0,
-      REJECTED: 0,
-    });
-
-    const s: Record<string, Stat> = {};
+    const s: Record<string, { count: number; total: number }> = {};
 
     for (const st of STAGES) {
-      s[st.key] = {
-        count: 0,
-        total: 0,
-        proposalTotals: emptyBreakdown(),
-        proposalCounts: emptyBreakdown(),
-      };
+      s[st.key] = { count: 0, total: 0 };
     }
 
-    s["PERDIDO"] = {
-      count: 0,
-      total: 0,
-      proposalTotals: emptyBreakdown(),
-      proposalCounts: emptyBreakdown(),
-    };
-
-    s["PAUSADO"] = {
-      count: 0,
-      total: 0,
-      proposalTotals: emptyBreakdown(),
-      proposalCounts: emptyBreakdown(),
-    };
+    s["PERDIDO"] = { count: 0, total: 0 };
+    s["PAUSADO"] = { count: 0, total: 0 };
 
     for (const d of deals as any[]) {
       const stage = d.stage || "LEAD";
       if (!s[stage]) {
-        s[stage] = {
-          count: 0,
-          total: 0,
-          proposalTotals: emptyBreakdown(),
-          proposalCounts: emptyBreakdown(),
-        };
+        s[stage] = { count: 0, total: 0 };
       }
 
       s[stage].count += 1;
       s[stage].total += effectiveDealValue(d);
-
-      const ps = proposalsByDeal[d.id] || [];
-      for (const p of ps as any[]) {
-        const status = p.status || "DRAFT";
-        const valor = Number(toNumber(p.valor_total) || 0);
-
-        if (status === "DRAFT") {
-          s[stage].proposalTotals.DRAFT += valor;
-          s[stage].proposalCounts.DRAFT += 1;
-        }
-        if (status === "SENT") {
-          s[stage].proposalTotals.SENT += valor;
-          s[stage].proposalCounts.SENT += 1;
-        }
-        if (status === "ACCEPTED") {
-          s[stage].proposalTotals.ACCEPTED += valor;
-          s[stage].proposalCounts.ACCEPTED += 1;
-        }
-        if (status === "REJECTED") {
-          s[stage].proposalTotals.REJECTED += valor;
-          s[stage].proposalCounts.REJECTED += 1;
-        }
-      }
     }
 
     return s;
@@ -272,16 +202,32 @@ export default function Dashboard() {
     return t;
   }, [deals, proposalsByDeal]);
 
-  const latestDeals = useMemo(() => {
-    return [...(deals as any[])]
-      .sort((a, b) => {
-        const da = a.last_contact_at ? new Date(a.last_contact_at).getTime() : 0;
-        const db = b.last_contact_at ? new Date(b.last_contact_at).getTime() : 0;
-        if (db !== da) return db - da;
-        return (b.id || 0) - (a.id || 0);
+  const searchNeedle = search.trim().toLowerCase();
+
+  const filteredLatestDeals = useMemo(() => {
+    const ordered = [...(deals as any[])].sort((a, b) => {
+      const da = a.last_contact_at ? new Date(a.last_contact_at).getTime() : 0;
+      const db = b.last_contact_at ? new Date(b.last_contact_at).getTime() : 0;
+      if (db !== da) return db - da;
+      return (b.id || 0) - (a.id || 0);
+    });
+
+    if (!searchNeedle) return ordered.slice(0, 6);
+
+    return ordered
+      .filter((d: any) => {
+        const title = String(d.title || "").toLowerCase();
+        const account = String(d.account_name || "").toLowerCase();
+        const projects = dealProjectsText(d).toLowerCase();
+
+        return (
+          title.includes(searchNeedle) ||
+          account.includes(searchNeedle) ||
+          projects.includes(searchNeedle)
+        );
       })
-      .slice(0, 6);
-  }, [deals]);
+      .slice(0, 12);
+  }, [deals, searchNeedle]);
 
   const builderRanking = useMemo(() => {
     const rankingMap: Record<
@@ -329,8 +275,7 @@ export default function Dashboard() {
   const loading =
     dealsQ.isLoading || proposalsQ.isLoading || commitmentsQ.isLoading;
 
-  const error =
-    dealsQ.isError || proposalsQ.isError || commitmentsQ.isError;
+  const error = dealsQ.isError || proposalsQ.isError || commitmentsQ.isError;
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-6">
@@ -379,6 +324,7 @@ export default function Dashboard() {
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
             {STAGES.map((st) => {
               const item = stats[st.key];
+
               return (
                 <div
                   key={st.key}
@@ -399,34 +345,11 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="mt-3">
-                    <div className="text-xs text-slate-500">Valor da etapa</div>
-                    <div className="text-base font-semibold text-slate-900">
+                  <div className="mt-4 border-t border-slate-100 pt-4">
+                    <div className="text-xs text-slate-500">Valor total da etapa</div>
+                    <div className="text-lg font-semibold text-slate-900">
                       {brl(item?.total || 0)}
                     </div>
-                  </div>
-
-                  <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
-                    <StatLine
-                      label="Rascunho"
-                      value={`${brl(item?.proposalTotals.DRAFT || 0)} • ${item?.proposalCounts.DRAFT || 0}`}
-                      icon={<FileText className="h-3.5 w-3.5" />}
-                    />
-                    <StatLine
-                      label="Enviada"
-                      value={`${brl(item?.proposalTotals.SENT || 0)} • ${item?.proposalCounts.SENT || 0}`}
-                      icon={<Send className="h-3.5 w-3.5" />}
-                    />
-                    <StatLine
-                      label="Aceita"
-                      value={`${brl(item?.proposalTotals.ACCEPTED || 0)} • ${item?.proposalCounts.ACCEPTED || 0}`}
-                      icon={<CheckCircle2 className="h-3.5 w-3.5" />}
-                    />
-                    <StatLine
-                      label="Recusada"
-                      value={`${brl(item?.proposalTotals.REJECTED || 0)} • ${item?.proposalCounts.REJECTED || 0}`}
-                      icon={<XCircle className="h-3.5 w-3.5" />}
-                    />
                   </div>
                 </div>
               );
@@ -508,16 +431,34 @@ export default function Dashboard() {
           {/* CONTEÚDO */}
           <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="text-sm font-semibold text-slate-900">
-                Últimas oportunidades movimentadas
-              </div>
-              <div className="text-xs text-slate-500 mt-1">
-                Ordenado por último contato
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">
+                    Últimas oportunidades movimentadas
+                  </div>
+                  <div className="text-xs text-slate-500 mt-1">
+                    Ordenado por último contato
+                  </div>
+                </div>
+
+                <div className="w-full max-w-md">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Buscar por construtora ou empreendimento..."
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-10 py-2.5 text-sm text-slate-900 placeholder:text-slate-400
+                                 focus:border-slate-300 focus:outline-none focus:ring-4 focus:ring-slate-200"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="mt-4 grid gap-3">
-                {latestDeals.map((d: any) => {
+                {filteredLatestDeals.map((d: any) => {
                   const hasProposal = (proposalsByDeal[d.id] || []).length > 0;
+                  const projectsText = dealProjectsText(d);
 
                   return (
                     <Link
@@ -546,6 +487,12 @@ export default function Dashboard() {
                           </div>
 
                           <div className="mt-1 text-xs text-slate-600 inline-flex items-center gap-2">
+                            <Layers3 className="h-3.5 w-3.5 text-slate-400" />
+                            Empreendimentos:{" "}
+                            <span className="font-semibold">{projectsText}</span>
+                          </div>
+
+                          <div className="mt-1 text-xs text-slate-600 inline-flex items-center gap-2">
                             <Clock className="h-3.5 w-3.5 text-slate-400" />
                             Último contato:{" "}
                             <span className="font-semibold">
@@ -566,9 +513,9 @@ export default function Dashboard() {
                   );
                 })}
 
-                {latestDeals.length === 0 && (
+                {filteredLatestDeals.length === 0 && (
                   <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                    Nenhuma oportunidade ainda. Crie uma no Kanban.
+                    Nenhuma oportunidade encontrada para o filtro informado.
                   </div>
                 )}
               </div>
