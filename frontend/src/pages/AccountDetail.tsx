@@ -976,16 +976,21 @@ function ProjectForm({
   const [obra, setObra] = useState("");
 
   const obraParsed = parseMonthYearInput(obra);
+  const obraMissing = obra.trim().length === 0;
   const obraInvalid = obra.trim().length > 0 && obraParsed === null;
 
-  const canSubmit = name.trim().length > 0 && !loading && !obraInvalid;
+  const canSubmit =
+    name.trim().length > 0 &&
+    !loading &&
+    !obraMissing &&
+    !obraInvalid;
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
 
-        if (obraInvalid) return;
+        if (obraMissing || obraInvalid) return;
 
         onSubmit({
           name,
@@ -1028,7 +1033,7 @@ function ProjectForm({
         </Field>
       </div>
 
-      <Field label="Entrega obra (MM/AAAA)">
+      <Field label="Entrega obra (MM/AAAA) *">
         <div className="grid gap-1">
           <input
             placeholder="12/2026"
@@ -1036,8 +1041,15 @@ function ProjectForm({
             onChange={(e) => setObra(normalizeMonthYearTyping(e.target.value))}
             className={inputCls}
           />
-          {obraInvalid && (
-            <div className="text-xs text-red-600">Informe no formato MM/AAAA.</div>
+          {obraMissing && (
+            <div className="text-xs text-red-600">
+              Informe a entrega da obra.
+            </div>
+          )}
+          {!obraMissing && obraInvalid && (
+            <div className="text-xs text-red-600">
+              Informe no formato MM/AAAA.
+            </div>
           )}
         </div>
       </Field>
@@ -1061,19 +1073,26 @@ function ProjectEditForm({
   const [name, setName] = useState(initial?.name || "");
   const [city, setCity] = useState(initial?.city || "");
   const [state, setState] = useState(initial?.state || "PR");
-  const [obra, setObra] = useState(formatMonthYear(initial?.obra_entrega_prevista || ""));
+  const [obra, setObra] = useState(
+    formatMonthYear(initial?.obra_entrega_prevista || "")
+  );
 
   const obraParsed = parseMonthYearInput(obra);
+  const obraMissing = obra.trim().length === 0;
   const obraInvalid = obra.trim().length > 0 && obraParsed === null;
 
-  const canSubmit = name.trim().length > 0 && !loading && !obraInvalid;
+  const canSubmit =
+    name.trim().length > 0 &&
+    !loading &&
+    !obraMissing &&
+    !obraInvalid;
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
 
-        if (obraInvalid) return;
+        if (obraMissing || obraInvalid) return;
 
         onSubmit({
           name,
@@ -1115,7 +1134,7 @@ function ProjectEditForm({
         </Field>
       </div>
 
-      <Field label="Entrega obra (MM/AAAA)">
+      <Field label="Entrega obra (MM/AAAA) *">
         <div className="grid gap-1">
           <input
             placeholder="12/2026"
@@ -1123,8 +1142,15 @@ function ProjectEditForm({
             onChange={(e) => setObra(normalizeMonthYearTyping(e.target.value))}
             className={inputCls}
           />
-          {obraInvalid && (
-            <div className="text-xs text-red-600">Informe no formato MM/AAAA.</div>
+          {obraMissing && (
+            <div className="text-xs text-red-600">
+              Informe a entrega da obra.
+            </div>
+          )}
+          {!obraMissing && obraInvalid && (
+            <div className="text-xs text-red-600">
+              Informe no formato MM/AAAA.
+            </div>
           )}
         </div>
       </Field>

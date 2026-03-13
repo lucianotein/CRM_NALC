@@ -179,6 +179,9 @@ export default function ProposalForm({
   const obraEntregaParsed = parseMonthYearInput(obraEntrega);
   const elevEntregaParsed = parseMonthYearInput(elevEntrega);
 
+  const obraEntregaMissing = obraEntrega.trim().length === 0;
+  const elevEntregaMissing = elevEntrega.trim().length === 0;
+
   const obraEntregaInvalid =
     obraEntrega.trim().length > 0 && obraEntregaParsed === null;
 
@@ -191,8 +194,20 @@ export default function ProposalForm({
     elevEntregaParsed < currentYearMonth();
 
   const formInvalid = useMemo(() => {
-    return obraEntregaInvalid || elevEntregaInvalid || elevEntregaPastMonth;
-  }, [obraEntregaInvalid, elevEntregaInvalid, elevEntregaPastMonth]);
+    return (
+      obraEntregaMissing ||
+      elevEntregaMissing ||
+      obraEntregaInvalid ||
+      elevEntregaInvalid ||
+      elevEntregaPastMonth
+    );
+  }, [
+    obraEntregaMissing,
+    elevEntregaMissing,
+    obraEntregaInvalid,
+    elevEntregaInvalid,
+    elevEntregaPastMonth,
+  ]);
 
   return (
     <form
@@ -340,7 +355,7 @@ export default function ProposalForm({
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Field label="Entrega da obra (opcional)">
+        <Field label="Entrega da obra *">
           <div className="grid gap-1">
             <input
               value={obraEntrega}
@@ -354,13 +369,16 @@ export default function ProposalForm({
                 Data fixa do empreendimento selecionado.
               </div>
             )}
-            {obraEntregaInvalid && (
+            {!obraTravada && obraEntregaMissing && (
+              <div className="text-xs text-red-600">Informe a entrega da obra.</div>
+            )}
+            {!obraEntregaMissing && obraEntregaInvalid && (
               <div className="text-xs text-red-600">Informe no formato MM/AAAA.</div>
             )}
           </div>
         </Field>
 
-        <Field label="Entrega dos elevadores (opcional)">
+        <Field label="Entrega dos elevadores *">
           <div className="grid gap-1">
             <input
               value={elevEntrega}
@@ -368,10 +386,15 @@ export default function ProposalForm({
               placeholder="12/2026"
               className={inputCls}
             />
-            {elevEntregaInvalid && (
+            {elevEntregaMissing && (
+              <div className="text-xs text-red-600">
+                Informe a entrega dos elevadores.
+              </div>
+            )}
+            {!elevEntregaMissing && elevEntregaInvalid && (
               <div className="text-xs text-red-600">Informe no formato MM/AAAA.</div>
             )}
-            {!elevEntregaInvalid && elevEntregaPastMonth && (
+            {!elevEntregaMissing && !elevEntregaInvalid && elevEntregaPastMonth && (
               <div className="text-xs text-red-600">
                 A entrega dos elevadores não pode ser inferior ao mês atual.
               </div>
