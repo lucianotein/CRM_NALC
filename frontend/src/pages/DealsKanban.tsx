@@ -28,6 +28,7 @@ const COLUMNS: { key: DealStage; title: string; accent: string }[] = [
 type DealWithExtras = Deal & {
   account_name?: string;
   project_name?: string | null;
+  project_names?: string[];
   valor_total?: string | number | null;
 };
 
@@ -101,7 +102,16 @@ export default function DealsKanban() {
       const a = String(d.title || "").toLowerCase();
       const b = String(d.account_name || "").toLowerCase();
       const c = String(d.project_name || "").toLowerCase();
-      return a.includes(needle) || b.includes(needle) || c.includes(needle);
+      const dNames = Array.isArray(d.project_names)
+        ? d.project_names.join(" ").toLowerCase()
+        : "";
+
+      return (
+        a.includes(needle) ||
+        b.includes(needle) ||
+        c.includes(needle) ||
+        dNames.includes(needle)
+      );
     });
   }, [dealsQ.data, q]);
 
@@ -201,7 +211,7 @@ export default function DealsKanban() {
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="Buscar por título, construtora ou obra..."
+                  placeholder="Buscar por título, construtora ou empreendimentos..."
                   className="w-full rounded-2xl border border-slate-200 bg-white px-10 py-2.5 text-sm text-slate-900 placeholder:text-slate-400
                              focus:border-slate-300 focus:outline-none focus:ring-4 focus:ring-slate-200"
                 />
@@ -342,6 +352,17 @@ function DealCard({
   onChangeStage: (stage: DealStage) => void;
 }) {
   const brl = formatBRL(displayValue);
+  const projectNames =
+    Array.isArray(deal.project_names) && deal.project_names.length > 0
+      ? deal.project_names.filter(Boolean)
+      : [];
+
+  const obraTexto =
+    projectNames.length > 0
+      ? projectNames.join(", ")
+      : deal.project
+      ? deal.project_name || `#${deal.project}`
+      : "-";
 
   return (
     <div
@@ -372,9 +393,9 @@ function DealCard({
         </span>
       </div>
 
-      {deal.project && (
-        <div className="mt-1 truncate text-xs text-slate-500">
-          Obra: {deal.project_name || `#${deal.project}`}
+      {obraTexto !== "-" && (
+        <div className="mt-1 text-xs text-slate-500 break-words">
+          Empreendimentos: {obraTexto}
         </div>
       )}
 

@@ -10,10 +10,66 @@ class DealSerializer(serializers.ModelSerializer):
     account_name = serializers.CharField(source="account.name", read_only=True)
     project_name = serializers.CharField(source="project.name", read_only=True)
 
+    projects = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Project.objects.all(),
+        required=False,
+    )
+    project_names = serializers.SerializerMethodField()
+
     class Meta:
         model = Deal
         fields = "__all__"
         read_only_fields = ("owner", "created_at", "updated_at", "last_contact_at")
+
+    def get_project_names(self, obj):
+        return [p.name for p in obj.projects.all()]
+
+    def validate(self, attrs):
+        account = attrs.get("account") or getattr(self.instance, "account", None)
+        projects = attrs.get("projects", None)
+
+        if projects is not None and account is not None:
+            for p in projects:
+                if p.account_id != account.id:
+                    raise serializers.ValidationError(
+                        {"projects": "Todos os empreendimentos devem pertencer à construtora informada."}
+                    )
+
+        return attrs
+
+    def create(self, validated_data):
+        projects = validated_data.pop("projects", [])
+        validated_data.pop("project", None)  # evita duplicidade
+
+        first_project = projects[0] if projects else None
+
+        instance = Deal.objects.create(
+            **validated_data,
+            project=first_project,
+        )
+
+        if projects:
+            instance.projects.set(projects)
+
+        return instance
+
+    def update(self, instance, validated_data):
+        projects = validated_data.pop("projects", None)
+        validated_data.pop("project", None)  # compatibilidade temporária
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        if projects is not None:
+            instance.project = projects[0] if projects else None
+
+        instance.save()
+
+        if projects is not None:
+            instance.projects.set(projects)
+
+        return instance
 
 
 class ActivitySerializer(serializers.ModelSerializer):

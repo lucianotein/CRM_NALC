@@ -22,14 +22,14 @@ from .serializers import (
 
 
 class DealViewSet(ModelViewSet):
-    queryset = Deal.objects.select_related("account", "project").order_by("-id")
+    queryset = Deal.objects.select_related("account", "project").prefetch_related("projects").order_by("-id")
     serializer_class = DealSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         # ✅ só do usuário logado
         return (
-            Deal.objects.select_related("account", "project")
+            Deal.objects.select_related("account", "project").prefetch_related("projects")
             .filter(owner=self.request.user)
             .order_by("-id")
         )

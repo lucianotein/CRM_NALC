@@ -55,9 +55,13 @@ function toNumber(v: unknown): number {
 
 function formatMonthYear(value?: string | null) {
   if (!value) return "";
-  const m = String(value).match(/^(\d{4})-(\d{2})$/);
-  if (!m) return value;
-  return `${m[2]}/${m[1]}`;
+  const ym = String(value).match(/^(\d{4})-(\d{2})$/);
+  if (ym) return `${ym[2]}/${ym[1]}`;
+
+  const ymd = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (ymd) return `${ymd[2]}/${ymd[1]}`;
+
+  return String(value);
 }
 
 function parseMonthYearInput(value: string) {
@@ -511,6 +515,13 @@ export default function AccountDetail() {
                           <div className="text-sm font-semibold text-slate-900 truncate">
                             {d.title}
                           </div>
+
+                          {Array.isArray(d.project_names) && d.project_names.length > 0 && (
+                            <div className="mt-1 text-xs text-slate-500">
+                              Empreendimentos: {d.project_names.join(" • ")}
+                            </div>
+                          )}
+
                           <div className="mt-1 text-xs text-slate-600">
                             Etapa:{" "}
                             <span className="font-semibold text-slate-800">
@@ -623,6 +634,11 @@ export default function AccountDetail() {
         <Modal title="Nova Oportunidade" onClose={() => setOpenDeal(false)}>
           <DealForm
             loading={mutDeal.isPending}
+            projects={projects}
+            existingDeals={deals}
+            onCreateProject={(payload: any) =>
+              mutProject.mutateAsync({ ...payload, account: accountId })
+            }
             onSubmit={(payload: any) =>
               mutDeal.mutate({
                 ...payload,
@@ -962,10 +978,7 @@ function ProjectForm({
   const obraParsed = parseMonthYearInput(obra);
   const obraInvalid = obra.trim().length > 0 && obraParsed === null;
 
-  const canSubmit =
-    name.trim().length > 0 &&
-    !loading &&
-    !obraInvalid;
+  const canSubmit = name.trim().length > 0 && !loading && !obraInvalid;
 
   return (
     <form
@@ -1024,9 +1037,7 @@ function ProjectForm({
             className={inputCls}
           />
           {obraInvalid && (
-            <div className="text-xs text-red-600">
-              Informe no formato MM/AAAA.
-            </div>
+            <div className="text-xs text-red-600">Informe no formato MM/AAAA.</div>
           )}
         </div>
       </Field>
@@ -1037,7 +1048,6 @@ function ProjectForm({
     </form>
   );
 }
-
 
 function ProjectEditForm({
   initial,
@@ -1056,10 +1066,7 @@ function ProjectEditForm({
   const obraParsed = parseMonthYearInput(obra);
   const obraInvalid = obra.trim().length > 0 && obraParsed === null;
 
-  const canSubmit =
-    name.trim().length > 0 &&
-    !loading &&
-    !obraInvalid;
+  const canSubmit = name.trim().length > 0 && !loading && !obraInvalid;
 
   return (
     <form
@@ -1117,9 +1124,7 @@ function ProjectEditForm({
             className={inputCls}
           />
           {obraInvalid && (
-            <div className="text-xs text-red-600">
-              Informe no formato MM/AAAA.
-            </div>
+            <div className="text-xs text-red-600">Informe no formato MM/AAAA.</div>
           )}
         </div>
       </Field>
@@ -1134,35 +1139,320 @@ function ProjectEditForm({
 
 function DealForm({
   loading,
+  projects,
+  existingDeals,
   onSubmit,
+  onCreateProject,
 }: {
   loading: boolean;
+  projects: any[];
+  existingDeals: any[];
   onSubmit: (payload: any) => void;
+  onCreateProject: (payload: any) => Promise<any>;
 }) {
   const [title, setTitle] = useState("");
   const [value, setValue] = useState<string>("");
+  const [selectedProjects, setSelectedProjects] = useState<number[]>([]);
 
-  const canSubmit = title.trim().length > 0 && !loading;
+  const [showInlineProject, setShowInlineProject] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [projectCity, setProjectCity] = useState("");
+  const [projectState, setProjectState] = useState("PR");
+  const [projectObra, setProjectObra] = useState("");
+  const [triedInlineProjectSave, setTriedInlineProjectSave] = useState(false);
+
+  const projectObraParsed = parseMonthYearInput(projectObra);
+  const projectObraMissing = projectObra.trim().length === 0;
+  const projectObraInvalid =
+    projectObra.trim().length > 0 && projectObraParsed === null;
+
+  const selectedProjectObjects = projects.filter((p: any) =>
+    selectedProjects.includes(p.id)
+  );
+
+  const suggestedTitle = useMemo(() => {
+    if (selectedProjectObjects.length === 0) return "";
+    if (selectedProjectObjects.length === 1) return selectedProjectObjects[0].name;
+
+    const first = selectedProjectObjects[0]?.name || "Empreendimento";
+    return `${first} + ${selectedProjectObjects.length - 1} empreendimento(s)`;
+  }, [selectedProjectObjects]);
+
+  const effectiveTitle = title.trim() || suggestedTitle;
+
+  const conflictingDeals = useMemo(() => {
+    return (existingDeals || []).filter((d: any) => {
+      const ids =
+        Array.isArray(d?.projects) && d.projects.length > 0
+          ? d.projects.map((x: any) => Number(x))
+          : d?.project
+          ? [Number(d.project)]
+          : [];
+
+      return ids.some((id: number) => selectedProjects.includes(id));
+    });
+  }, [existingDeals, selectedProjects]);
+
+  const conflictingProjectNames = useMemo(() => {
+    const names = new Set<string>();
+
+    for (const p of projects) {
+      if (!selectedProjects.includes(p.id)) continue;
+
+      const exists = conflictingDeals.some((d: any) => {
+        const ids =
+          Array.isArray(d?.projects) && d.projects.length > 0
+            ? d.projects.map((x: any) => Number(x))
+            : d?.project
+            ? [Number(d.project)]
+            : [];
+
+        return ids.includes(Number(p.id));
+      });
+
+      if (exists) names.add(p.name);
+    }
+
+    return Array.from(names);
+  }, [projects, selectedProjects, conflictingDeals]);
+
+  const conflictingDealTitles = useMemo(() => {
+    return Array.from(
+      new Set(
+        conflictingDeals
+          .map((d: any) => String(d?.title || "").trim())
+          .filter(Boolean)
+      )
+    );
+  }, [conflictingDeals]);
+
+  const canSubmit =
+    selectedProjects.length > 0 &&
+    effectiveTitle.trim().length > 0 &&
+    !loading;
+
+  async function handleCreateInlineProject() {
+    setTriedInlineProjectSave(true);
+
+    if (!projectName.trim()) return;
+    if (projectObraMissing) return;
+    if (projectObraInvalid) return;
+
+    const created = await onCreateProject({
+      name: projectName,
+      city: projectCity,
+      state: (projectState || "").toUpperCase().slice(0, 2),
+      obra_entrega_prevista: projectObraParsed || null,
+      notes: "",
+    });
+
+    if (created?.id) {
+      setSelectedProjects((prev) =>
+        prev.includes(created.id) ? prev : [...prev, created.id]
+      );
+    }
+
+    setProjectName("");
+    setProjectCity("");
+    setProjectState("PR");
+    setProjectObra("");
+    setTriedInlineProjectSave(false);
+    setShowInlineProject(false);
+  }
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
+
+        if (!canSubmit) return;
+
         onSubmit({
-          title,
+          title: effectiveTitle,
+          projects: selectedProjects,
+          project: selectedProjects[0] ?? null,
           valor_total: value ? Number(String(value).replace(",", ".")) : null,
         });
       }}
       className="grid gap-4"
     >
-      <Field label="Título">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-slate-900">Empreendimentos</div>
+            <div className="text-xs text-slate-600">
+              Selecione um ou mais empreendimentos desta construtora.
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowInlineProject((v) => !v)}
+            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition shrink-0"
+          >
+            <Plus className="h-4 w-4 text-slate-500" />
+            {showInlineProject ? "Ocultar formulário" : "Novo empreendimento"}
+          </button>
+        </div>
+
+        {projects.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-3 text-sm text-slate-600">
+            Nenhum empreendimento cadastrado ainda.
+          </div>
+        ) : (
+          <div className="grid gap-2">
+            {projects.map((p: any) => {
+              const checked = selectedProjects.includes(p.id);
+
+              return (
+                <label
+                  key={p.id}
+                  className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) =>
+                      setSelectedProjects((prev) =>
+                        e.target.checked
+                          ? [...prev, p.id]
+                          : prev.filter((x) => x !== p.id)
+                      )
+                    }
+                  />
+                  <span className="font-medium">{p.name}</span>
+
+                  {p.city || p.state ? (
+                    <span className="text-xs text-slate-500">
+                      • {p.city || "-"} / {p.state || "-"}
+                    </span>
+                  ) : null}
+
+                  {p.obra_entrega_prevista ? (
+                    <span className="text-xs text-slate-500">
+                      • entrega {formatMonthYear(p.obra_entrega_prevista)}
+                    </span>
+                  ) : null}
+                </label>
+              );
+            })}
+          </div>
+        )}
+
+        {conflictingDeals.length > 0 && (
+          <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="font-semibold">Atenção</div>
+            <div className="mt-1">
+              Já existem oportunidades cadastradas para empreendimento(s) selecionado(s):
+              {" "}
+              <b>{conflictingProjectNames.join(", ")}</b>.
+            </div>
+            {conflictingDealTitles.length > 0 && (
+              <div className="mt-1 text-xs text-amber-800">
+                Oportunidades encontradas: {conflictingDealTitles.join(" • ")}
+              </div>
+            )}
+          </div>
+        )}
+
+        {showInlineProject && (
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="mb-4 text-sm font-semibold text-slate-900">
+              Novo empreendimento
+            </div>
+
+            <div className="grid gap-4">
+              <Field label="Nome do empreendimento">
+                <input
+                  placeholder="Nome do empreendimento"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  className={inputCls}
+                />
+              </Field>
+
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_110px_160px] gap-4">
+                <Field label="Cidade">
+                  <input
+                    placeholder="Cidade"
+                    value={projectCity}
+                    onChange={(e) => setProjectCity(e.target.value)}
+                    className={inputCls}
+                  />
+                </Field>
+
+                <Field label="UF">
+                  <input
+                    placeholder="UF"
+                    value={projectState}
+                    onChange={(e) => setProjectState(e.target.value.toUpperCase())}
+                    maxLength={2}
+                    className={inputCls}
+                  />
+                </Field>
+
+                <Field label="Entrega obra *">
+                  <div className="grid gap-1">
+                    <input
+                      placeholder="12/2026"
+                      value={projectObra}
+                      onChange={(e) =>
+                        setProjectObra(normalizeMonthYearTyping(e.target.value))
+                      }
+                      className={inputCls}
+                    />
+                    {triedInlineProjectSave && projectObraMissing && (
+                      <div className="text-xs text-red-600">
+                        Informe a entrega da obra.
+                      </div>
+                    )}
+                    {!projectObraMissing && projectObraInvalid && (
+                      <div className="text-xs text-red-600">
+                        Informe no formato MM/AAAA.
+                      </div>
+                    )}
+                  </div>
+                </Field>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handleCreateInlineProject}
+                  disabled={!projectName.trim() || projectObraMissing || projectObraInvalid}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 transition disabled:bg-slate-300 disabled:text-slate-600 disabled:cursor-not-allowed"
+                >
+                  Salvar empreendimento
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowInlineProject(false);
+                    setTriedInlineProjectSave(false);
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <Field label="Título da oportunidade">
         <input
-          placeholder="Ex: Big Tower - 2 elevadores"
+          placeholder={suggestedTitle || "Ex: Pacote Torre A + Torre B"}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          required
           className={inputCls}
         />
+        {suggestedTitle && !title.trim() && (
+          <div className="text-xs text-slate-500">
+            Sugestão automática: <b>{suggestedTitle}</b>
+          </div>
+        )}
       </Field>
 
       <Field label="Valor (opcional)">
@@ -1181,6 +1471,7 @@ function DealForm({
     </form>
   );
 }
+
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -1221,6 +1512,7 @@ function PrimaryButton({
   );
 }
 
+
 function Modal({
   title,
   children,
@@ -1231,25 +1523,27 @@ function Modal({
   onClose: () => void;
 }) {
   return (
-    <div
-      onClick={onClose}
-      className="fixed inset-0 bg-black/40 grid place-items-center p-4 z-50"
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl"
-      >
-        <div className="flex items-center gap-3 mb-5">
-          <div className="text-base font-semibold text-slate-900">{title}</div>
-          <button
-            onClick={onClose}
-            className="ml-auto inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50 transition"
-          >
-            <X className="h-4 w-4" />
-            Fechar
-          </button>
+    <div className="fixed inset-0 z-50 bg-black/40 p-4">
+      <div className="grid h-full place-items-center">
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-3xl rounded-3xl border border-slate-200 bg-white shadow-2xl max-h-[92vh] overflow-hidden"
+        >
+          <div className="flex items-center gap-3 border-b border-slate-200 px-6 py-4">
+            <div className="text-base font-semibold text-slate-900">{title}</div>
+            <button
+              onClick={onClose}
+              className="ml-auto inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+            >
+              <X className="h-4 w-4 text-slate-500" />
+              Fechar
+            </button>
+          </div>
+
+          <div className="overflow-y-auto px-6 py-5 max-h-[calc(92vh-80px)]">
+            {children}
+          </div>
         </div>
-        {children}
       </div>
     </div>
   );

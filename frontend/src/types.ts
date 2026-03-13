@@ -19,7 +19,9 @@ export type Deal = {
   stage: DealStage;
 
   account: number; // FK
-  project: number | null; // FK
+  project: number | null; // compatibilidade temporária
+  projects?: number[]; // múltiplos empreendimentos
+  project_names?: string[]; // nomes vindos da API para exibição
   owner: number;
 
   valor_total: string | null;

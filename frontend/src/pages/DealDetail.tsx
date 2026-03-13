@@ -567,6 +567,21 @@ export default function DealDetail() {
   const d = dealQ.data;
   const valor = formatBRL((d as any).valor_total);
 
+  const dealProjectNames =
+    Array.isArray((d as any).project_names) && (d as any).project_names.length > 0
+      ? (d as any).project_names.filter(Boolean)
+      : [];
+
+  const obraResumoTexto =
+    dealProjectNames.length > 0
+      ? dealProjectNames.join(", ")
+      : ((d as any).project_name || ((d as any).project ? `#${(d as any).project}` : "-"));
+
+  const obraTopoTexto =
+    dealProjectNames.length > 0
+      ? dealProjectNames.join(" • ")
+      : ((d as any).project_name || ((d as any).project ? `#${(d as any).project}` : "-"));
+
   const busy =
     updateStageMut.isPending ||
     updateDealTitleMut.isPending ||
@@ -689,10 +704,10 @@ export default function DealDetail() {
                   {(d as any).account_name || `#${(d as any).account}`}
                 </Link>
 
-                {(d as any).project ? (
+                {obraTopoTexto !== "-" ? (
                   <span className="inline-flex items-center gap-1">
                     <Layers3 className="h-3.5 w-3.5 text-slate-400" />
-                    {(d as any).project_name || `#${(d as any).project}`}
+                    {obraTopoTexto}
                   </span>
                 ) : null}
 
@@ -1053,12 +1068,8 @@ export default function DealDetail() {
                   icon={<Building2 className="h-4 w-4 text-slate-400" />}
                 />
                 <InfoRow
-                  label="Obra"
-                  value={
-                    (d as any).project
-                      ? (d as any).project_name || `#${(d as any).project}`
-                      : "-"
-                  }
+                  label="Empreendimentos"
+                  value={obraResumoTexto}
                   icon={<Layers3 className="h-4 w-4 text-slate-400" />}
                 />
                 <InfoRow
@@ -1306,7 +1317,7 @@ function InfoRow({
       <div className="mt-0.5">{icon}</div>
       <div className="min-w-0">
         <div className="text-xs text-slate-500">{label}</div>
-        <div className="text-sm font-semibold text-slate-900 truncate">{value}</div>
+        <div className="text-sm font-semibold text-slate-900 break-words">{value}</div>
       </div>
     </div>
   );

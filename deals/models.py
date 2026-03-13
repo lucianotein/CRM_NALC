@@ -25,6 +25,12 @@ class Deal(models.Model):
         related_name="deals",
     )
 
+    projects = models.ManyToManyField(
+        "projects.Project",
+        blank=True,
+        related_name="multi_deals",
+    )
+
     title = models.CharField(max_length=220)
     stage = models.CharField(
         max_length=20, choices=Stage.choices, default=Stage.LEAD, db_index=True
