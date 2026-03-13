@@ -1,6 +1,9 @@
 from rest_framework import serializers
 from .models import Project
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectSerializer(serializers.ModelSerializer):
@@ -10,6 +13,8 @@ class ProjectSerializer(serializers.ModelSerializer):
         read_only_fields = ("created_at", "updated_at")
 
     def validate_obra_entrega_prevista(self, value):
+        logger.warning("validate_obra_entrega_prevista recebeu: %r", value)
+
         if value in (None, ""):
             return ""
 
