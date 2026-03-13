@@ -1,4 +1,3 @@
-// frontend/src/pages/DealsKanban.tsx
 import React, { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Deal, DealStage } from "../types";
@@ -142,17 +141,28 @@ export default function DealsKanban() {
     return Number.isFinite(n) ? n : 0;
   }
 
-  function latestProposalValue(dealId: number): number {
+  function validProposalSum(dealId: number): number {
     const ps = proposalsByDeal[dealId] || [];
     if (ps.length === 0) return NaN;
 
-    const last = ps[ps.length - 1];
-    const n = parseMoney((last as any).valor_total);
-    return Number.isFinite(n) ? n : NaN;
+    let total = 0;
+    let hasAnyValid = false;
+
+    for (const p of ps as any[]) {
+      if (p?.status === "REJECTED") continue;
+
+      const n = parseMoney(p?.valor_total);
+      if (Number.isFinite(n)) {
+        total += n;
+        hasAnyValid = true;
+      }
+    }
+
+    return hasAnyValid ? total : NaN;
   }
 
   function effectiveDealValue(d: DealWithExtras): number {
-    const proposalValue = latestProposalValue(d.id);
+    const proposalValue = validProposalSum(d.id);
     if (Number.isFinite(proposalValue)) return proposalValue;
     return dealBaseValue(d);
   }
@@ -188,7 +198,6 @@ export default function DealsKanban() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Topbar */}
       <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur">
         <div className="mx-auto max-w-[1600px] px-6 py-4">
           <div className="flex items-center gap-3">
@@ -247,7 +256,6 @@ export default function DealsKanban() {
         </div>
       </div>
 
-      {/* Board */}
       <div className="mx-auto max-w-[1600px] px-6 py-6">
         <div className="overflow-x-auto">
           <div

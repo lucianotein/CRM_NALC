@@ -158,18 +158,29 @@ export default function Dashboard() {
     return Number.isFinite(n) ? n : 0;
   }
 
-  function latestProposalValue(d: any): number {
+  function validProposalSum(d: any): number {
     const ps = proposalsByDeal[d.id] || [];
     if (ps.length === 0) return NaN;
 
-    const last = ps[ps.length - 1];
-    const n = toNumber((last as any).valor_total);
-    return Number.isFinite(n) ? n : NaN;
+    let total = 0;
+    let hasAnyValid = false;
+
+    for (const p of ps as any[]) {
+      if (p?.status === "REJECTED") continue;
+
+      const n = toNumber(p?.valor_total);
+      if (Number.isFinite(n)) {
+        total += n;
+        hasAnyValid = true;
+      }
+    }
+
+    return hasAnyValid ? total : NaN;
   }
 
   function effectiveDealValue(d: any): number {
-    const lastProposal = latestProposalValue(d);
-    if (Number.isFinite(lastProposal)) return lastProposal;
+    const proposalSum = validProposalSum(d);
+    if (Number.isFinite(proposalSum)) return proposalSum;
     return leadValue(d);
   }
 
@@ -320,7 +331,6 @@ export default function Dashboard() {
 
       {!loading && !error && (
         <>
-          {/* CARDS POR ETAPA */}
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
             {STAGES.map((st) => {
               const item = stats[st.key];
@@ -356,7 +366,6 @@ export default function Dashboard() {
             })}
           </div>
 
-          {/* LINHA EXECUTIVA */}
           <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-center gap-3">
@@ -368,7 +377,7 @@ export default function Dashboard() {
                     Total geral do funil
                   </div>
                   <div className="text-xs text-slate-500">
-                    Considerando último valor de proposta ou valor do lead
+                    Soma das propostas válidas por oportunidade ou valor do lead
                   </div>
                 </div>
               </div>
@@ -428,7 +437,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* CONTEÚDO */}
           <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-start justify-between gap-4">
@@ -457,7 +465,8 @@ export default function Dashboard() {
 
               <div className="mt-4 grid gap-3">
                 {filteredLatestDeals.map((d: any) => {
-                  const hasProposal = (proposalsByDeal[d.id] || []).length > 0;
+                  const validProposalTotal = validProposalSum(d);
+                  const hasValidProposal = Number.isFinite(validProposalTotal);
                   const projectsText = dealProjectsText(d);
 
                   return (
@@ -480,7 +489,7 @@ export default function Dashboard() {
                               {d.account_name || `#${d.account}`}
                             </span>
                             {" • "}
-                            {hasProposal ? "Última proposta" : "Lead"}:{" "}
+                            {hasValidProposal ? "Propostas válidas" : "Lead"}:{" "}
                             <span className="font-semibold">
                               {brl(effectiveDealValue(d))}
                             </span>

@@ -1,15 +1,63 @@
 import React, { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createAccount, listAccounts } from "../crmApi";
+import { listDeals } from "../dealsApi";
+import { listAllProposals } from "../proposalsApi";
 import { Link } from "react-router-dom";
-import { Building2, Plus, Search, X, Loader2, MapPin, Hash } from "lucide-react";
+import {
+  Building2,
+  Plus,
+  Search,
+  X,
+  Loader2,
+  MapPin,
+  Hash,
+  BadgeDollarSign,
+  Layers3,
+  FileText,
+  Send,
+  CheckCircle2,
+  XCircle,
+} from "lucide-react";
+
+function toNumber(v: any): number {
+  if (v === null || v === undefined || v === "") return NaN;
+  if (typeof v === "number") return v;
+
+  const s = String(v).trim();
+
+  if (s.includes(",")) {
+    const n = Number(s.replace(/\./g, "").replace(",", "."));
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function brl(n: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(Number.isFinite(n) ? n : 0);
+}
 
 export default function AccountsList() {
   const qc = useQueryClient();
 
-  const { data, isLoading, isError } = useQuery({
+  const accountsQ = useQuery({
     queryKey: ["accounts"],
     queryFn: listAccounts,
+  });
+
+  const dealsQ = useQuery({
+    queryKey: ["deals"],
+    queryFn: listDeals,
+  });
+
+  const proposalsQ = useQuery({
+    queryKey: ["proposals"],
+    queryFn: listAllProposals,
   });
 
   const [q, setQ] = useState("");
@@ -23,8 +71,98 @@ export default function AccountsList() {
     },
   });
 
+  const deals = dealsQ.data || [];
+  const proposals = proposalsQ.data || [];
+
+  const dealById = useMemo(() => {
+    const map: Record<number, any> = {};
+    for (const d of deals as any[]) {
+      map[d.id] = d;
+    }
+    return map;
+  }, [deals]);
+
+  const accountStats = useMemo(() => {
+    const stats: Record<
+      number,
+      {
+        dealCount: number;
+        proposalTotal: number;
+        draftTotal: number;
+        sentTotal: number;
+        acceptedTotal: number;
+        rejectedTotal: number;
+        proposalCount: number;
+        draftCount: number;
+        sentCount: number;
+        acceptedCount: number;
+        rejectedCount: number;
+      }
+    > = {};
+
+    function ensure(accountId: number) {
+      if (!stats[accountId]) {
+        stats[accountId] = {
+          dealCount: 0,
+          proposalTotal: 0,
+          draftTotal: 0,
+          sentTotal: 0,
+          acceptedTotal: 0,
+          rejectedTotal: 0,
+          proposalCount: 0,
+          draftCount: 0,
+          sentCount: 0,
+          acceptedCount: 0,
+          rejectedCount: 0,
+        };
+      }
+      return stats[accountId];
+    }
+
+    for (const d of deals as any[]) {
+      const accountId = Number(d.account);
+      if (!Number.isFinite(accountId)) continue;
+      ensure(accountId).dealCount += 1;
+    }
+
+    for (const p of proposals as any[]) {
+      const dealId = Number(p.deal);
+      if (!Number.isFinite(dealId)) continue;
+
+      const deal = dealById[dealId];
+      if (!deal) continue;
+
+      const accountId = Number(deal.account);
+      if (!Number.isFinite(accountId)) continue;
+
+      const s = ensure(accountId);
+      const valor = toNumber(p.valor_total);
+      const num = Number.isFinite(valor) ? valor : 0;
+      const status = String(p.status || "DRAFT");
+
+      s.proposalTotal += num;
+      s.proposalCount += 1;
+
+      if (status === "DRAFT") {
+        s.draftTotal += num;
+        s.draftCount += 1;
+      } else if (status === "SENT") {
+        s.sentTotal += num;
+        s.sentCount += 1;
+      } else if (status === "ACCEPTED") {
+        s.acceptedTotal += num;
+        s.acceptedCount += 1;
+      } else if (status === "REJECTED") {
+        s.rejectedTotal += num;
+        s.rejectedCount += 1;
+      }
+    }
+
+    return stats;
+  }, [deals, proposals, dealById]);
+
   const filtered = useMemo(() => {
-    const arr = data || [];
+    const arr = accountsQ.data || [];
     const s = q.trim().toLowerCase();
     if (!s) return arr;
 
@@ -40,14 +178,24 @@ export default function AccountsList() {
         state.includes(s)
       );
     });
-  }, [data, q]);
+  }, [accountsQ.data, q]);
 
-  if (isLoading) return <div className="p-6 text-slate-700">Carregando construtoras...</div>;
-  if (isError) return <div className="p-6 text-red-600">Erro ao carregar.</div>;
+  const isLoading =
+    accountsQ.isLoading || dealsQ.isLoading || proposalsQ.isLoading;
+
+  const isError =
+    accountsQ.isError || dealsQ.isError || proposalsQ.isError;
+
+  if (isLoading) {
+    return <div className="p-6 text-slate-700">Carregando construtoras...</div>;
+  }
+
+  if (isError) {
+    return <div className="p-6 text-red-600">Erro ao carregar.</div>;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Topbar */}
       <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur">
         <div className="mx-auto max-w-6xl px-6 py-4">
           <div className="flex items-center gap-3">
@@ -64,7 +212,6 @@ export default function AccountsList() {
               </div>
             </div>
 
-            {/* Search */}
             <div className="ml-auto w-full max-w-md">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -107,55 +254,126 @@ export default function AccountsList() {
         </div>
       </div>
 
-      {/* Content */}
       <div className="mx-auto max-w-6xl px-6 py-6">
-        {/* List */}
         <div className="grid gap-3">
-          {filtered.map((a: any) => (
-            <Link
-              key={a.id}
-              to={`/accounts/${a.id}`}
-              className="group block rounded-3xl border border-slate-200 bg-white p-5 shadow-sm
-                         hover:shadow-md hover:border-slate-300 transition"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <div className="h-9 w-9 rounded-2xl bg-slate-100 flex items-center justify-center">
-                      <Building2 className="h-4 w-4 text-slate-700" />
+          {filtered.map((a: any) => {
+            const stats = accountStats[Number(a.id)] || {
+              dealCount: 0,
+              proposalTotal: 0,
+              draftTotal: 0,
+              sentTotal: 0,
+              acceptedTotal: 0,
+              rejectedTotal: 0,
+              proposalCount: 0,
+              draftCount: 0,
+              sentCount: 0,
+              acceptedCount: 0,
+              rejectedCount: 0,
+            };
+
+            return (
+              <Link
+                key={a.id}
+                to={`/accounts/${a.id}`}
+                className="group block rounded-3xl border border-slate-200 bg-white p-5 shadow-sm
+                           hover:shadow-md hover:border-slate-300 transition"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <div className="h-9 w-9 rounded-2xl bg-slate-100 flex items-center justify-center">
+                        <Building2 className="h-4 w-4 text-slate-700" />
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-900 truncate">
+                          {a.name}
+                        </div>
+
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+                          {a.cnpj ? (
+                            <span className="inline-flex items-center gap-1">
+                              <Hash className="h-3.5 w-3.5 text-slate-400" />
+                              CNPJ: {a.cnpj}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">CNPJ não informado</span>
+                          )}
+
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                            {a.city || "-"} / {a.state || "-"}
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-900 truncate">
-                        {a.name}
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
-                        {a.cnpj ? (
-                          <span className="inline-flex items-center gap-1">
-                            <Hash className="h-3.5 w-3.5 text-slate-400" />
-                            CNPJ: {a.cnpj}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">CNPJ não informado</span>
-                        )}
-
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                          {a.city || "-"} / {a.state || "-"}
+                    <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
+                      <span className="inline-flex items-center gap-2">
+                        <Layers3 className="h-4 w-4 text-slate-400" />
+                        Oportunidades:{" "}
+                        <span className="font-semibold text-slate-900">
+                          {stats.dealCount}
                         </span>
-                      </div>
+                      </span>
+
+                      <span className="inline-flex items-center gap-2">
+                        <BadgeDollarSign className="h-4 w-4 text-slate-400" />
+                        Total propostas:{" "}
+                        <span className="font-semibold text-slate-900">
+                          {brl(stats.proposalTotal)}
+                        </span>
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
+                      <span className="inline-flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-slate-400" />
+                        Rascunho:{" "}
+                        <span className="font-semibold text-slate-900">
+                          {brl(stats.draftTotal)}
+                        </span>
+                        <span className="text-slate-400">({stats.draftCount})</span>
+                      </span>
+
+                      <span className="inline-flex items-center gap-2">
+                        <Send className="h-4 w-4 text-slate-400" />
+                        Enviadas:{" "}
+                        <span className="font-semibold text-slate-900">
+                          {brl(stats.sentTotal)}
+                        </span>
+                        <span className="text-slate-400">({stats.sentCount})</span>
+                      </span>
+
+                      <span className="inline-flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-slate-400" />
+                        Aceitas:{" "}
+                        <span className="font-semibold text-slate-900">
+                          {brl(stats.acceptedTotal)}
+                        </span>
+                        <span className="text-slate-400">({stats.acceptedCount})</span>
+                      </span>
+
+                      <span className="inline-flex items-center gap-2">
+                        <XCircle className="h-4 w-4 text-slate-400" />
+                        Recusadas:{" "}
+                        <span className="font-semibold text-slate-900">
+                          {brl(stats.rejectedTotal)}
+                        </span>
+                        <span className="text-slate-400">({stats.rejectedCount})</span>
+                      </span>
                     </div>
                   </div>
-                </div>
 
-                <div className="shrink-0">
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold text-slate-600">
-                    Abrir
-                  </span>
+                  <div className="shrink-0">
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold text-slate-600">
+                      Abrir
+                    </span>
+                  </div>
                 </div>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
 
           {filtered.length === 0 && (
             <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center">
