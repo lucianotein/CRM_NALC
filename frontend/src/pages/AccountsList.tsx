@@ -365,10 +365,20 @@ export default function AccountsList() {
                     </div>
                   </div>
 
-                  <div className="shrink-0">
+                  <div className="shrink-0 flex flex-col items-end gap-2">
                     <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold text-slate-600">
                       Abrir
                     </span>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 font-semibold text-blue-700">
+                        Criado por: {a.owner_name || "-"}
+                      </span>
+
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 font-semibold text-emerald-700">
+                        Comercial responsável: {a.comercial_responsavel_name || "-"}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </Link>

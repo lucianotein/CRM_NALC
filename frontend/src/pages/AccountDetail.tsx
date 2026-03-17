@@ -15,6 +15,9 @@ import {
   deleteContact,
   updateProject,
   deleteProject,
+  listUsers,
+  transferAccount,
+  type CRMUser,
 } from "../crmApi";
 
 // ✅ Oportunidades (Kanban)
@@ -39,6 +42,13 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
+
+import { api } from "../api";
+
+async function getMe() {
+  const { data } = await api.get("/auth/me/");
+  return data;
+}
 
 function formatBRL(v: unknown) {
   if (v === null || v === undefined || v === "") return null;
@@ -92,6 +102,10 @@ export default function AccountDetail() {
   const navigate = useNavigate();
   const accountId = Number(id);
   const qc = useQueryClient();
+  const meQ = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+  });
 
   const accQ = useQuery({
     queryKey: ["account", accountId],
@@ -108,6 +122,11 @@ export default function AccountDetail() {
     queryFn: listAllProposals,
   });
 
+  const usersQ = useQuery({
+    queryKey: ["users"],
+    queryFn: listUsers,
+  });
+
   const contacts = useMemo(
     () => (contactsQ.data || []).filter((c: any) => c.account === accountId),
     [contactsQ.data, accountId]
@@ -121,6 +140,11 @@ export default function AccountDetail() {
   const deals = useMemo(
     () => (dealsQ.data || []).filter((d: any) => d.account === accountId),
     [dealsQ.data, accountId]
+  );
+
+  const comerciais = useMemo(
+    () => (usersQ.data || []).filter((u: CRMUser) => u.role === "COMERCIAL"),
+    [usersQ.data]
   );
 
   const proposalsByDeal = useMemo(() => {
@@ -139,10 +163,15 @@ export default function AccountDetail() {
   const [openContact, setOpenContact] = useState(false);
   const [openProject, setOpenProject] = useState(false);
   const [openDeal, setOpenDeal] = useState(false);
+  const [dealError, setDealError] = useState<string | null>(null);
 
   const [openEditAccount, setOpenEditAccount] = useState(false);
   const [editContact, setEditContact] = useState<any | null>(null);
   const [editProject, setEditProject] = useState<any | null>(null);
+
+  const [openTransferAccount, setOpenTransferAccount] = useState(false);
+  const [selectedComercialId, setSelectedComercialId] = useState<number | "">("");
+  const [transferError, setTransferError] = useState<string | null>(null);
 
   // ---------------- Mutations: create ----------------
 
@@ -165,9 +194,23 @@ export default function AccountDetail() {
   const mutDeal = useMutation({
     mutationFn: createDeal,
     onSuccess: async () => {
+      setDealError(null);
       setOpenDeal(false);
       await qc.invalidateQueries({ queryKey: ["deals"] });
       await qc.invalidateQueries({ queryKey: ["proposals"] });
+    },
+    onError: (error: any) => {
+      const detail = error?.response?.data?.detail;
+
+      if (error?.response?.status === 403) {
+        setDealError(
+          detail ||
+            "Você não pode cadastrar uma oportunidade nesta construtora porque ela está atribuída a outro comercial. Solicite ao administrador a transferência da conta para você."
+        );
+        return;
+      }
+
+      setDealError("Não foi possível cadastrar a oportunidade. Tente novamente.");
     },
   });
 
@@ -191,6 +234,24 @@ export default function AccountDetail() {
       await qc.invalidateQueries({ queryKey: ["deals"] });
       await qc.invalidateQueries({ queryKey: ["proposals"] });
       navigate("/accounts");
+    },
+  });
+
+  const mutTransferAccount = useMutation({
+    mutationFn: (newComercialId: number) => transferAccount(accountId, newComercialId),
+    onSuccess: async () => {
+      setTransferError(null);
+      setOpenTransferAccount(false);
+      setSelectedComercialId("");
+      await qc.invalidateQueries({ queryKey: ["account", accountId] });
+      await qc.invalidateQueries({ queryKey: ["accounts"] });
+      await qc.invalidateQueries({ queryKey: ["deals"] });
+      alert("Construtora transferida com sucesso.");
+    },
+    onError: (error: any) => {
+      const detail =
+        error?.response?.data?.detail || "Não foi possível transferir a construtora.";
+      setTransferError(detail);
     },
   });
 
@@ -230,11 +291,19 @@ export default function AccountDetail() {
 
   // ---------------- Loading / errors ----------------
 
-  if (accQ.isLoading) return <div className="p-6 text-slate-700">Carregando...</div>;
-  if (accQ.isError || !accQ.data)
+  if (accQ.isLoading || meQ.isLoading) {
+    return <div className="p-6 text-slate-700">Carregando...</div>;
+  }
+
+  if (accQ.isError || !accQ.data) {
     return <div className="p-6 text-red-600">Conta não encontrada.</div>;
+  }
 
   const a: any = accQ.data;
+  const me = meQ.data;
+
+  const canDeleteAccount =
+  me?.role === "ADMINISTRADOR" || Number(me?.id) === Number(a.owner);
 
   const totalPipeline = deals.reduce((acc: number, d: any) => {
     const proposals = proposalsByDeal[d.id] || [];
@@ -287,6 +356,7 @@ export default function AccountDetail() {
                 <div className="text-lg font-semibold tracking-tight text-slate-900 truncate">
                   {a.name}
                 </div>
+
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
                   {a.cnpj ? (
                     <span className="inline-flex items-center gap-1">
@@ -296,9 +366,20 @@ export default function AccountDetail() {
                   ) : (
                     <span className="text-slate-400">CNPJ não informado</span>
                   )}
+
                   <span className="inline-flex items-center gap-1">
                     <MapPin className="h-3.5 w-3.5 text-slate-400" />
                     {a.city || "-"} / {a.state || "-"}
+                  </span>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 font-semibold text-blue-700">
+                    Criado por: {a.owner_name || "-"}
+                  </span>
+
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 font-semibold text-emerald-700">
+                    Comercial responsável: {a.comercial_responsavel_name || "-"}
                   </span>
                 </div>
               </div>
@@ -311,6 +392,20 @@ export default function AccountDetail() {
               >
                 <Pencil className="h-4 w-4" />
                 Editar
+              </button>
+
+              <button
+                onClick={() => {
+                  setTransferError(null);
+                  setSelectedComercialId(
+                    a.comercial_responsavel ? Number(a.comercial_responsavel) : ""
+                  );
+                  setOpenTransferAccount(true);
+                }}
+                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition focus:outline-none focus:ring-4 focus:ring-slate-200"
+              >
+                <UserRound className="h-4 w-4" />
+                Transferir conta
               </button>
 
               <button
@@ -522,7 +617,17 @@ export default function AccountDetail() {
                             </div>
                           )}
 
-                          <div className="mt-1 text-xs text-slate-600">
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">
+                              Comercial: {d.owner_name || "-"}
+                            </span>
+
+                            <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 font-semibold text-blue-700">
+                              Criado por: {d.created_by_name || "-"}
+                            </span>
+                          </div>
+
+                          <div className="mt-2 text-xs text-slate-600">
                             Etapa:{" "}
                             <span className="font-semibold text-slate-800">
                               {d.stage || "-"}
@@ -562,27 +667,28 @@ export default function AccountDetail() {
       </div>
 
       {openEditAccount && (
-        <Modal title="Editar Construtora" onClose={() => setOpenEditAccount(false)}>
-          <AccountEditForm
-            initial={a}
-            loading={mutUpdateAccount.isPending || mutDeleteAccount.isPending}
-            onSubmit={(payload) => mutUpdateAccount.mutate(payload)}
-            onDelete={() => {
-              const msg =
-                "Tem certeza que deseja EXCLUIR esta construtora?\n\n" +
-                "Isso vai apagar também:\n" +
-                `- ${projects.length} empreendimento(s)\n` +
-                `- ${contacts.length} contato(s)\n` +
-                `- ${deals.length} oportunidade(s)\n` +
-                "E tudo ligado às oportunidades (atividades, propostas, anexos, etc).\n\n" +
-                "Essa ação NÃO pode ser desfeita.";
-              const ok = window.confirm(msg);
-              if (!ok) return;
-              mutDeleteAccount.mutate();
-            }}
-          />
-        </Modal>
-      )}
+      <Modal title="Editar Construtora" onClose={() => setOpenEditAccount(false)}>
+        <AccountEditForm
+          initial={a}
+          loading={mutUpdateAccount.isPending || mutDeleteAccount.isPending}
+          canDelete={canDeleteAccount}
+          onSubmit={(payload) => mutUpdateAccount.mutate(payload)}
+          onDelete={() => {
+            const msg =
+              "Tem certeza que deseja EXCLUIR esta construtora?\n\n" +
+              "Isso vai apagar também:\n" +
+              `- ${projects.length} empreendimento(s)\n` +
+              `- ${contacts.length} contato(s)\n` +
+              `- ${deals.length} oportunidade(s)\n` +
+              "E tudo ligado às oportunidades (atividades, propostas, anexos, etc).\n\n" +
+              "Essa ação NÃO pode ser desfeita.";
+            const ok = window.confirm(msg);
+            if (!ok) return;
+            mutDeleteAccount.mutate();
+          }}
+        />
+      </Modal>
+    )}
 
       {editContact && (
         <Modal title="Editar Contato" onClose={() => setEditContact(null)}>
@@ -605,6 +711,85 @@ export default function AccountDetail() {
               mutUpdateProject.mutate({ id: editProject.id, payload })
             }
           />
+        </Modal>
+      )}
+
+      {openTransferAccount && (
+        <Modal
+          title="Transferir Construtora"
+          onClose={() => {
+            setOpenTransferAccount(false);
+            setTransferError(null);
+          }}
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!selectedComercialId) {
+                setTransferError("Selecione o novo comercial responsável.");
+                return;
+              }
+              mutTransferAccount.mutate(Number(selectedComercialId));
+            }}
+            className="grid gap-4"
+          >
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <div>
+                <b>Construtora:</b> {a.name}
+              </div>
+              <div className="mt-1">
+                <b>Comercial atual:</b>{" "}
+                {a.comercial_responsavel_name || a.owner_name || "-"}
+              </div>
+              <div className="mt-2 text-xs text-slate-500">
+                As oportunidades abertas desta construtora serão transferidas para o novo comercial.
+                O criador original das oportunidades será preservado.
+              </div>
+            </div>
+
+            <Field label="Novo comercial responsável">
+              <select
+                value={selectedComercialId}
+                onChange={(e) =>
+                  setSelectedComercialId(e.target.value ? Number(e.target.value) : "")
+                }
+                className={inputCls}
+              >
+                <option value="">Selecione...</option>
+                {comerciais.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.full_name || u.username}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            {transferError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {transferError}
+              </div>
+            )}
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenTransferAccount(false);
+                  setTransferError(null);
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+              >
+                Cancelar
+              </button>
+
+              <PrimaryButton
+                loading={mutTransferAccount.isPending}
+                disabled={!selectedComercialId}
+              >
+                Transferir
+              </PrimaryButton>
+            </div>
+          </form>
         </Modal>
       )}
 
@@ -631,21 +816,29 @@ export default function AccountDetail() {
       )}
 
       {openDeal && (
-        <Modal title="Nova Oportunidade" onClose={() => setOpenDeal(false)}>
+        <Modal
+          title="Nova Oportunidade"
+          onClose={() => {
+            setDealError(null);
+            setOpenDeal(false);
+          }}
+        >
           <DealForm
             loading={mutDeal.isPending}
+            errorMessage={dealError}
             projects={projects}
             existingDeals={deals}
             onCreateProject={(payload: any) =>
               mutProject.mutateAsync({ ...payload, account: accountId })
             }
-            onSubmit={(payload: any) =>
+            onSubmit={(payload: any) => {
+              setDealError(null);
               mutDeal.mutate({
                 ...payload,
                 account: accountId,
                 stage: "LEAD" as DealStage,
-              })
-            }
+              });
+            }}
           />
         </Modal>
       )}
@@ -699,11 +892,13 @@ function EmptyState({ text }: { text: string }) {
 function AccountEditForm({
   initial,
   loading,
+  canDelete,
   onSubmit,
   onDelete,
 }: {
   initial: any;
   loading: boolean;
+  canDelete: boolean;
   onSubmit: (payload: any) => void;
   onDelete: () => void;
 }) {
@@ -789,15 +984,17 @@ function AccountEditForm({
         Salvar alterações
       </PrimaryButton>
 
-      <button
-        type="button"
-        onClick={onDelete}
-        disabled={loading}
-        className="inline-flex items-center justify-center gap-2 w-full rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50 transition disabled:opacity-60 disabled:cursor-not-allowed"
-      >
-        <Trash2 className="h-4 w-4" />
-        Excluir construtora
-      </button>
+      {canDelete && (
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={loading}
+          className="inline-flex items-center justify-center gap-2 w-full rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50 transition disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <Trash2 className="h-4 w-4" />
+          Excluir construtora
+        </button>
+      )}
 
       <div className="text-xs text-slate-500">
         * Excluir remove permanentemente a construtora e tudo ligado a ela.
@@ -1165,12 +1362,14 @@ function ProjectEditForm({
 
 function DealForm({
   loading,
+  errorMessage,
   projects,
   existingDeals,
   onSubmit,
   onCreateProject,
 }: {
   loading: boolean;
+  errorMessage?: string | null;
   projects: any[];
   existingDeals: any[];
   onSubmit: (payload: any) => void;
@@ -1490,6 +1689,12 @@ function DealForm({
           className={inputCls}
         />
       </Field>
+
+      {errorMessage && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {errorMessage}
+        </div>
+      )}
 
       <PrimaryButton loading={loading} disabled={!canSubmit}>
         Salvar

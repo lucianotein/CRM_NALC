@@ -15,12 +15,7 @@ class ProjectViewSet(ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = Project.objects.select_related("account").all().order_by("-updated_at")
-
-        if self.request.user.is_staff or self.request.user.is_superuser:
-            return qs
-
-        return qs.filter(account__owner=self.request.user)
+        return Project.objects.select_related("account").all().order_by("-updated_at")
 
     def create(self, request, *args, **kwargs):
         logger.warning("PROJECT CREATE request.data = %s", request.data)
@@ -38,11 +33,5 @@ class ProjectViewSet(ModelViewSet):
         account = serializer.validated_data.get("account")
         if not account:
             raise PermissionDenied("account é obrigatório")
-
-        if not (self.request.user.is_staff or self.request.user.is_superuser):
-            if account.owner_id != self.request.user.id:
-                raise PermissionDenied(
-                    "Você não pode criar empreendimentos em uma construtora de outro usuário."
-                )
 
         serializer.save()

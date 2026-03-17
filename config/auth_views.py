@@ -37,4 +37,12 @@ def logout_view(request):
 @permission_classes([IsAuthenticated])
 def me_view(request):
     u = request.user
-    return Response({"id": u.id, "username": u.username, "email": u.email})
+    profile = getattr(u, "profile", None)
+    role = getattr(profile, "role", "COMERCIAL")
+
+    return Response({
+        "id": u.id,
+        "username": u.username,
+        "email": u.email,
+        "role": role,
+    })

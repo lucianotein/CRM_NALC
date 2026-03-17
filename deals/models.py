@@ -39,6 +39,14 @@ class Deal(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="owned_deals"
     )
 
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="deals_created",
+        null=True,
+        blank=True,
+    )
+
     elevador_entrega_prevista = models.DateField(null=True, blank=True)
 
     valor_total = models.DecimalField(

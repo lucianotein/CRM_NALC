@@ -12,6 +12,9 @@ class ProjectSerializer(serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = ("created_at", "updated_at")
 
+    def validate_account(self, account):
+        return account
+
     def validate_obra_entrega_prevista(self, value):
         logger.warning("validate_obra_entrega_prevista recebeu: %r", value)
 

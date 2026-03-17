@@ -1,19 +1,37 @@
 from django.contrib import admin
-from .models import Account, ContactPerson
+from django.contrib.auth import get_user_model
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+
+from .models import Account, ContactPerson, UserProfile
+
+User = get_user_model()
+
 
 @admin.register(Account)
 class AccountAdmin(admin.ModelAdmin):
-    list_display = ("name", "cnpj", "city", "state", "is_active", "owner", "updated_at")
-    search_fields = ("name", "cnpj")
-    list_filter = ("is_active", "state")
+    list_display = ("id", "name", "cnpj", "owner", "is_active", "created_at")
+    search_fields = ("name", "cnpj", "owner__username")
+    list_filter = ("is_active", "created_at")
 
-    def save_model(self, request, obj, form, change):
-        if not obj.owner_id:
-            obj.owner = request.user
-        super().save_model(request, obj, form, change)
 
 @admin.register(ContactPerson)
 class ContactPersonAdmin(admin.ModelAdmin):
-    list_display = ("name", "account", "role", "phone", "email", "is_primary", "created_at")
-    search_fields = ("name", "account__name", "phone", "email")
+    list_display = ("id", "name", "account", "role", "phone", "email", "is_primary")
+    search_fields = ("name", "account__name", "email", "phone")
     list_filter = ("is_primary",)
+
+
+class UserProfileInline(admin.StackedInline):
+    model = UserProfile
+    can_delete = False
+    extra = 0
+    verbose_name_plural = "Perfil CRM"
+    fk_name = "user"
+
+
+class UserAdmin(BaseUserAdmin):
+    inlines = [UserProfileInline]
+
+
+admin.site.unregister(User)
+admin.site.register(User, UserAdmin)

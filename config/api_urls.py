@@ -1,6 +1,6 @@
 #config/api_urls.py
 from rest_framework.routers import DefaultRouter
-from accounts.views import AccountViewSet, ContactPersonViewSet
+from accounts.views import CRMUserViewSet, AccountViewSet, ContactPersonViewSet
 from projects.views import ProjectViewSet
 from deals.views import (
     DealViewSet,
@@ -19,5 +19,6 @@ router.register("activities", ActivityViewSet)
 router.register("attachments", DealAttachmentViewSet)
 router.register("barter-items", DealBarterItemViewSet)
 router.register("proposals", ProposalViewSet)
+router.register("users", CRMUserViewSet, basename="users")
 
 urlpatterns = router.urls

@@ -70,6 +70,37 @@ export async function deleteAccount(id: number): Promise<void> {
   await api.delete(`/accounts/${id}/`);
 }
 
+
+export type CRMUser = {
+  id: number;
+  username: string;
+  email: string;
+  full_name: string;
+  role: "ADMINISTRADOR" | "COMERCIAL";
+};
+
+export async function listUsers(): Promise<CRMUser[]> {
+  const { data } = await api.get("/users/");
+  return data;
+}
+
+export async function transferAccount(
+  accountId: number,
+  newComercialId: number
+): Promise<{
+  detail: string;
+  account_id: number;
+  account_name: string;
+  new_comercial_id: number;
+  new_comercial_username: string;
+  transferred_open_deals: number;
+}> {
+  const { data } = await api.post(`/accounts/${accountId}/transfer/`, {
+    new_comercial_id: newComercialId,
+  });
+  return data;
+}
+
 /* =========================
  * Contacts
  * ========================= */

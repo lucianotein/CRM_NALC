@@ -2,9 +2,16 @@ import React, { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Deal, DealStage } from "../types";
 import { listDeals, updateDealStage } from "../dealsApi";
-import { createDeal, listAccounts, type Account } from "../crmApi";
+import {
+  createDeal,
+  listAccounts,
+  listUsers,
+  type Account,
+  type CRMUser,
+} from "../crmApi";
 import { listAllProposals, type Proposal } from "../proposalsApi";
 import { Link } from "react-router-dom";
+import { api } from "../api";
 import {
   Building2,
   Plus,
@@ -14,6 +21,7 @@ import {
   CalendarClock,
   BadgeDollarSign,
   Layers3,
+  UserRound,
 } from "lucide-react";
 
 const COLUMNS: { key: DealStage; title: string; accent: string }[] = [
@@ -24,12 +32,25 @@ const COLUMNS: { key: DealStage; title: string; accent: string }[] = [
   { key: "FECHADO_GANHO", title: "Fechado", accent: "bg-emerald-200" },
 ];
 
+type Me = {
+  id: number;
+  username: string;
+  email: string;
+  role: "ADMINISTRADOR" | "COMERCIAL";
+};
+
 type DealWithExtras = Deal & {
   account_name?: string;
   project_name?: string | null;
   project_names?: string[];
   valor_total?: string | number | null;
+  owner_name?: string | null;
 };
+
+async function getMe(): Promise<Me> {
+  const { data } = await api.get("/auth/me/");
+  return data;
+}
 
 function formatBRL(v: unknown) {
   if (v === null || v === undefined || v === "") return null;
@@ -66,8 +87,14 @@ function parseMoney(v: unknown): number {
 export default function DealsKanban() {
   const qc = useQueryClient();
 
+  const meQ = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+  });
+
   const dealsQ = useQuery({ queryKey: ["deals"], queryFn: listDeals });
   const accountsQ = useQuery({ queryKey: ["accounts"], queryFn: listAccounts });
+  const usersQ = useQuery({ queryKey: ["users"], queryFn: listUsers });
   const proposalsQ = useQuery({
     queryKey: ["proposals"],
     queryFn: listAllProposals,
@@ -76,6 +103,8 @@ export default function DealsKanban() {
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [openNew, setOpenNew] = useState(false);
   const [q, setQ] = useState("");
+  const [commercialFilterMode, setCommercialFilterMode] = useState<"ALL" | "MINE" | "CUSTOM">("ALL");
+  const [selectedCommercialIds, setSelectedCommercialIds] = useState<number[]>([]);
 
   const updateStageMut = useMutation({
     mutationFn: ({ id, stage }: { id: number; stage: DealStage }) =>
@@ -91,28 +120,48 @@ export default function DealsKanban() {
     },
   });
 
+  const me = meQ.data;
+  const isAdmin = me?.role === "ADMINISTRADOR";
+
+  const commercials = useMemo(
+    () => (usersQ.data || []).filter((u: CRMUser) => u.role === "COMERCIAL"),
+    [usersQ.data]
+  );
+
   const filteredDeals = useMemo(() => {
     const all = (dealsQ.data || []) as DealWithExtras[];
     const needle = q.trim().toLowerCase();
 
-    if (!needle) return all;
+    let base = all;
 
-    return all.filter((d) => {
+    if (isAdmin) {
+      if (commercialFilterMode === "MINE") {
+        base = base.filter((d) => Number(d.owner) === Number(me?.id));
+      } else if (commercialFilterMode === "CUSTOM" && selectedCommercialIds.length > 0) {
+        base = base.filter((d) => selectedCommercialIds.includes(Number(d.owner)));
+      }
+    }
+
+    if (!needle) return base;
+
+    return base.filter((d) => {
       const a = String(d.title || "").toLowerCase();
       const b = String(d.account_name || "").toLowerCase();
       const c = String(d.project_name || "").toLowerCase();
       const dNames = Array.isArray(d.project_names)
         ? d.project_names.join(" ").toLowerCase()
         : "";
+      const e = String(d.owner_name || "").toLowerCase();
 
       return (
         a.includes(needle) ||
         b.includes(needle) ||
         c.includes(needle) ||
-        dNames.includes(needle)
+        dNames.includes(needle) ||
+        e.includes(needle)
       );
     });
-  }, [dealsQ.data, q]);
+  }, [dealsQ.data, q, isAdmin, commercialFilterMode, selectedCommercialIds, me?.id]);
 
   const proposalsByDeal = useMemo(() => {
     const map: Record<number, Proposal[]> = {};
@@ -186,11 +235,18 @@ export default function DealsKanban() {
     setDraggingId(null);
   }
 
-  if (dealsQ.isLoading || proposalsQ.isLoading) {
+  function toggleCommercial(id: number) {
+    setCommercialFilterMode("CUSTOM");
+    setSelectedCommercialIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  if (dealsQ.isLoading || proposalsQ.isLoading || meQ.isLoading || usersQ.isLoading) {
     return <div className="p-6 text-slate-700">Carregando oportunidades...</div>;
   }
 
-  if (dealsQ.isError || proposalsQ.isError) {
+  if (dealsQ.isError || proposalsQ.isError || meQ.isError || usersQ.isError) {
     return <div className="p-6 text-red-600">Erro ao carregar oportunidades</div>;
   }
 
@@ -220,7 +276,7 @@ export default function DealsKanban() {
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="Buscar por título, construtora ou empreendimentos..."
+                  placeholder="Buscar por título, construtora, empreendimentos ou comercial..."
                   className="w-full rounded-2xl border border-slate-200 bg-white px-10 py-2.5 text-sm text-slate-900 placeholder:text-slate-400
                              focus:border-slate-300 focus:outline-none focus:ring-4 focus:ring-slate-200"
                 />
@@ -246,6 +302,74 @@ export default function DealsKanban() {
               Nova oportunidade
             </button>
           </div>
+
+          {isAdmin && (
+            <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <UserRound className="h-4 w-4 text-slate-500" />
+                <div className="text-sm font-semibold text-slate-900">
+                  Filtrar oportunidades
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCommercialFilterMode("ALL");
+                    setSelectedCommercialIds([]);
+                  }}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                    commercialFilterMode === "ALL"
+                      ? "border border-slate-900 bg-slate-900 text-white"
+                      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Todos
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCommercialFilterMode("MINE");
+                    setSelectedCommercialIds([]);
+                  }}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                    commercialFilterMode === "MINE"
+                      ? "border border-emerald-700 bg-emerald-700 text-white"
+                      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Minhas oportunidades
+                </button>
+
+                {commercials.map((u) => {
+                  const active =
+                    commercialFilterMode === "CUSTOM" &&
+                    selectedCommercialIds.includes(u.id);
+
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => toggleCommercial(u.id)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                        active
+                          ? "border border-blue-700 bg-blue-700 text-white"
+                          : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      {u.full_name || u.username}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-2 text-[11px] text-slate-500">
+                O administrador pode ver tudo, apenas as próprias oportunidades ou filtrar por um ou mais comerciais.
+              </div>
+            </div>
+          )}
 
           {(updateStageMut.isPending || createDealMut.isPending) && (
             <div className="mt-3 flex items-center gap-2 text-sm text-slate-600">
@@ -398,6 +522,24 @@ function DealCard({
         <Building2 className="h-4 w-4 text-slate-400" />
         <span className="truncate">
           {deal.account_name || `Construtora #${deal.account}`}
+        </span>
+      </div>
+
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-xs text-slate-600 min-w-0">
+          <Building2 className="h-4 w-4 text-slate-400" />
+          <span className="truncate">
+            {deal.account_name || `Construtora #${deal.account}`}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-2">
+        <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+          <UserRound className="h-3.5 w-3.5" />
+          <span className="truncate">
+            Comercial: {deal.owner_name || "-"}
+          </span>
         </span>
       </div>
 

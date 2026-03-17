@@ -6,6 +6,8 @@ import { listDeals } from "../dealsApi";
 import type { DealStage } from "../types";
 import { listAllProposals, type Proposal } from "../proposalsApi";
 import { listCommitments, type Activity } from "../activitiesApi";
+import { listUsers, type CRMUser } from "../crmApi";
+import { api } from "../api";
 
 import {
   LayoutDashboard,
@@ -18,6 +20,7 @@ import {
   Wallet,
   Search,
   Layers3,
+  UserRound,
 } from "lucide-react";
 
 const STAGES: { key: DealStage; label: string }[] = [
@@ -27,6 +30,18 @@ const STAGES: { key: DealStage; label: string }[] = [
   { key: "NEGOCIACAO", label: "Negociação" },
   { key: "FECHADO_GANHO", label: "Fechado" },
 ];
+
+type Me = {
+  id: number;
+  username: string;
+  email: string;
+  role: "ADMINISTRADOR" | "COMERCIAL";
+};
+
+async function getMe(): Promise<Me> {
+  const { data } = await api.get("/auth/me/");
+  return data;
+}
 
 function stageLabel(s: string) {
   const map: Record<string, string> = {
@@ -109,11 +124,50 @@ export default function Dashboard() {
     queryFn: () => listCommitments(),
   });
 
+  const usersQ = useQuery({
+    queryKey: ["users"],
+    queryFn: listUsers,
+  });
+
+  const meQ = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+  });
+
   const [search, setSearch] = useState("");
+  const [commercialFilterMode, setCommercialFilterMode] = useState<"ALL" | "MINE" | "CUSTOM">("ALL");
+  const [selectedCommercialIds, setSelectedCommercialIds] = useState<number[]>([]);
+
+  const me = meQ.data;
+  const isAdmin = me?.role === "ADMINISTRADOR";
+
+  const users = usersQ.data || [];
+  const commercials = useMemo(
+    () => users.filter((u: CRMUser) => u.role === "COMERCIAL"),
+    [users]
+  );
 
   const deals = dealsQ.data || [];
   const proposals = proposalsQ.data || [];
   const commitments = commitmentsQ.data || [];
+
+  const filteredDealsByCommercial = useMemo(() => {
+    const allDeals = deals as any[];
+
+    if (!isAdmin) return allDeals;
+
+    if (commercialFilterMode === "MINE") {
+      return allDeals.filter((d: any) => Number(d.owner) === Number(me?.id));
+    }
+
+    if (commercialFilterMode === "CUSTOM" && selectedCommercialIds.length > 0) {
+      return allDeals.filter((d: any) =>
+        selectedCommercialIds.includes(Number(d.owner))
+      );
+    }
+
+    return allDeals;
+  }, [deals, isAdmin, commercialFilterMode, selectedCommercialIds, me?.id]);
 
   const proposalsByDeal = useMemo(() => {
     const map: Record<number, Proposal[]> = {};
@@ -138,11 +192,11 @@ export default function Dashboard() {
 
   const dealById = useMemo(() => {
     const map: Record<number, any> = {};
-    for (const d of deals as any[]) {
+    for (const d of filteredDealsByCommercial as any[]) {
       map[d.id] = d;
     }
     return map;
-  }, [deals]);
+  }, [filteredDealsByCommercial]);
 
   function leadValue(d: any): number {
     const v =
@@ -194,7 +248,7 @@ export default function Dashboard() {
     s["PERDIDO"] = { count: 0, total: 0 };
     s["PAUSADO"] = { count: 0, total: 0 };
 
-    for (const d of deals as any[]) {
+    for (const d of filteredDealsByCommercial as any[]) {
       const stage = d.stage || "LEAD";
       if (!s[stage]) {
         s[stage] = { count: 0, total: 0 };
@@ -205,18 +259,55 @@ export default function Dashboard() {
     }
 
     return s;
-  }, [deals, proposalsByDeal]);
+  }, [filteredDealsByCommercial, proposalsByDeal]);
 
   const grandTotal = useMemo(() => {
     let t = 0;
-    for (const d of deals as any[]) t += effectiveDealValue(d);
+    for (const d of filteredDealsByCommercial as any[]) t += effectiveDealValue(d);
     return t;
-  }, [deals, proposalsByDeal]);
+  }, [filteredDealsByCommercial, proposalsByDeal]);
+
+  const userTotals = useMemo(() => {
+    const map: Record<
+      number,
+      {
+        userId: number;
+        userName: string;
+        dealCount: number;
+        total: number;
+      }
+    > = {};
+
+    for (const d of deals as any[]) {
+      const ownerId = Number(d.owner);
+      if (!Number.isFinite(ownerId)) continue;
+
+      const user = commercials.find((u) => u.id === ownerId);
+      const userName = d.owner_name || user?.full_name || user?.username || `Usuário #${ownerId}`;
+
+      if (!map[ownerId]) {
+        map[ownerId] = {
+          userId: ownerId,
+          userName,
+          dealCount: 0,
+          total: 0,
+        };
+      }
+
+      map[ownerId].dealCount += 1;
+      map[ownerId].total += effectiveDealValue(d);
+    }
+
+    return Object.values(map).sort((a, b) => {
+      if (b.total !== a.total) return b.total - a.total;
+      return b.dealCount - a.dealCount;
+    });
+  }, [deals, commercials, proposalsByDeal]);
 
   const searchNeedle = search.trim().toLowerCase();
 
   const filteredLatestDeals = useMemo(() => {
-    const ordered = [...(deals as any[])].sort((a, b) => {
+    const ordered = [...(filteredDealsByCommercial as any[])].sort((a, b) => {
       const da = a.last_contact_at ? new Date(a.last_contact_at).getTime() : 0;
       const db = b.last_contact_at ? new Date(b.last_contact_at).getTime() : 0;
       if (db !== da) return db - da;
@@ -230,15 +321,17 @@ export default function Dashboard() {
         const title = String(d.title || "").toLowerCase();
         const account = String(d.account_name || "").toLowerCase();
         const projects = dealProjectsText(d).toLowerCase();
+        const ownerName = String(d.owner_name || "").toLowerCase();
 
         return (
           title.includes(searchNeedle) ||
           account.includes(searchNeedle) ||
-          projects.includes(searchNeedle)
+          projects.includes(searchNeedle) ||
+          ownerName.includes(searchNeedle)
         );
       })
       .slice(0, 12);
-  }, [deals, searchNeedle]);
+  }, [filteredDealsByCommercial, searchNeedle]);
 
   const builderRanking = useMemo(() => {
     const rankingMap: Record<
@@ -283,10 +376,36 @@ export default function Dashboard() {
       .slice(0, 5);
   }, [proposals, dealById]);
 
-  const loading =
-    dealsQ.isLoading || proposalsQ.isLoading || commitmentsQ.isLoading;
+  const filteredCommitments = useMemo(() => {
+    if (!isAdmin || selectedCommercialIds.length === 0) return commitments;
 
-  const error = dealsQ.isError || proposalsQ.isError || commitmentsQ.isError;
+    return commitments.filter((a: Activity) => {
+      const deal = dealById[a.deal];
+      if (!deal) return false;
+      return selectedCommercialIds.includes(Number(deal.owner));
+    });
+  }, [commitments, isAdmin, selectedCommercialIds, dealById]);
+
+  function toggleCommercial(id: number) {
+    setCommercialFilterMode("CUSTOM");
+    setSelectedCommercialIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  const loading =
+    dealsQ.isLoading ||
+    proposalsQ.isLoading ||
+    commitmentsQ.isLoading ||
+    usersQ.isLoading ||
+    meQ.isLoading;
+
+  const error =
+    dealsQ.isError ||
+    proposalsQ.isError ||
+    commitmentsQ.isError ||
+    usersQ.isError ||
+    meQ.isError;
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-6">
@@ -331,6 +450,74 @@ export default function Dashboard() {
 
       {!loading && !error && (
         <>
+          {isAdmin && (
+            <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-2">
+                <UserRound className="h-4 w-4 text-slate-500" />
+                <div className="text-sm font-semibold text-slate-900">
+                  Filtrar oportunidades
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCommercialFilterMode("ALL");
+                    setSelectedCommercialIds([]);
+                  }}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                    commercialFilterMode === "ALL"
+                      ? "border border-slate-900 bg-slate-900 text-white"
+                      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Todos
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCommercialFilterMode("MINE");
+                    setSelectedCommercialIds([]);
+                  }}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                    commercialFilterMode === "MINE"
+                      ? "border border-emerald-700 bg-emerald-700 text-white"
+                      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Minhas oportunidades
+                </button>
+
+                {commercials.map((u) => {
+                  const active =
+                    commercialFilterMode === "CUSTOM" &&
+                    selectedCommercialIds.includes(u.id);
+
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => toggleCommercial(u.id)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                        active
+                          ? "border border-blue-700 bg-blue-700 text-white"
+                          : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      {u.full_name || u.username}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-2 text-[11px] text-slate-500">
+                O administrador pode ver tudo, apenas as próprias oportunidades ou filtrar por um ou mais comerciais.
+              </div>
+            </div>
+          )}
+
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
             {STAGES.map((st) => {
               const item = stats[st.key];
@@ -437,6 +624,57 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {isAdmin && (
+            <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center">
+                  <UserRound className="h-5 w-5 text-slate-600" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">
+                    Totais por comercial
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Quantidade de oportunidades e valor total do funil por responsável
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                {userTotals.map((item) => (
+                  <div
+                    key={item.userId}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-900 truncate">
+                          {item.userName}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-600">
+                          Oportunidades:{" "}
+                          <span className="font-semibold text-slate-900">
+                            {item.dealCount}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-sm font-semibold text-slate-900 shrink-0">
+                        {brl(item.total)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {userTotals.length === 0 && (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    Nenhuma oportunidade encontrada.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-start justify-between gap-4">
@@ -455,7 +693,7 @@ export default function Dashboard() {
                     <input
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Buscar por construtora ou empreendimento..."
+                      placeholder="Buscar por construtora, empreendimento ou comercial..."
                       className="w-full rounded-2xl border border-slate-200 bg-white px-10 py-2.5 text-sm text-slate-900 placeholder:text-slate-400
                                  focus:border-slate-300 focus:outline-none focus:ring-4 focus:ring-slate-200"
                     />
@@ -465,8 +703,7 @@ export default function Dashboard() {
 
               <div className="mt-4 grid gap-3">
                 {filteredLatestDeals.map((d: any) => {
-                  const validProposalTotal = validProposalSum(d);
-                  const hasValidProposal = Number.isFinite(validProposalTotal);
+                  const hasValidProposal = Number.isFinite(validProposalSum(d));
                   const projectsText = dealProjectsText(d);
 
                   return (
@@ -499,6 +736,12 @@ export default function Dashboard() {
                             <Layers3 className="h-3.5 w-3.5 text-slate-400" />
                             Empreendimentos:{" "}
                             <span className="font-semibold">{projectsText}</span>
+                          </div>
+
+                          <div className="mt-1 text-xs">
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">
+                              Responsável: {d.owner_name || "-"}
+                            </span>
                           </div>
 
                           <div className="mt-1 text-xs text-slate-600 inline-flex items-center gap-2">
@@ -539,7 +782,7 @@ export default function Dashboard() {
               </div>
 
               <div className="mt-4 grid gap-3">
-                {commitments.map((a: Activity) => {
+                {filteredCommitments.map((a: Activity) => {
                   const deal = dealById[a.deal];
 
                   return (
@@ -562,6 +805,12 @@ export default function Dashboard() {
                             {" • "}Construtora:{" "}
                             <span className="font-semibold">
                               {deal?.account_name || `#${deal?.account ?? "-"}`}
+                            </span>
+                          </div>
+
+                          <div className="mt-1 text-xs">
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">
+                              Responsável: {deal?.owner_name || "-"}
                             </span>
                           </div>
 
@@ -591,7 +840,7 @@ export default function Dashboard() {
                   );
                 })}
 
-                {commitments.length === 0 && (
+                {filteredCommitments.length === 0 && (
                   <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
                     Nenhuma atividade pendente para hoje.
                   </div>

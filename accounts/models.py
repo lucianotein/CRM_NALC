@@ -1,6 +1,26 @@
-#/accounts/models.py
 from django.db import models
 from django.conf import settings
+
+
+class UserProfile(models.Model):
+    class Role(models.TextChoices):
+        ADMINISTRADOR = "ADMINISTRADOR", "Administrador"
+        COMERCIAL = "COMERCIAL", "Comercial"
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="profile",
+    )
+    role = models.CharField(
+        max_length=20,
+        choices=Role.choices,
+        default=Role.COMERCIAL,
+    )
+
+    def __str__(self):
+        return f"{self.user.username} - {self.role}"
+
 
 class Account(models.Model):
     name = models.CharField(max_length=200)
@@ -10,6 +30,13 @@ class Account(models.Model):
     state = models.CharField(max_length=2, blank=True, default="")
 
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="owned_accounts")
+    comercial_responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="accounts_comercial_responsavel",
+        null=True,
+        blank=True,
+    )
     is_active = models.BooleanField(default=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -17,6 +44,7 @@ class Account(models.Model):
 
     def __str__(self):
         return self.name
+
 
 class ContactPerson(models.Model):
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="contacts")
