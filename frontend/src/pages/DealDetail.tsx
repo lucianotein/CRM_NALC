@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Deal, DealStage } from "../types";
 import { api } from "../api";
@@ -251,6 +251,7 @@ const inputCls =
 export default function DealDetail() {
   const { id } = useParams();
   const dealId = Number(id);
+  const navigate = useNavigate();
   const qc = useQueryClient();
 
   const dealQ = useQuery({
@@ -291,15 +292,29 @@ export default function DealDetail() {
     },
   });
 
-  const updateDealTitleMut = useMutation({
-    mutationFn: async (title: string) => {
-      const { data } = await api.patch(`/deals/${dealId}/`, { title });
+  const updateDealMut = useMutation({
+    mutationFn: async (payload: {
+      title?: string;
+      valor_total?: number | null;
+      stage?: DealStage;
+    }) => {
+      const { data } = await api.patch(`/deals/${dealId}/`, payload);
       return data;
     },
     onSuccess: async () => {
-      setIsEditingTitle(false);
+      setOpenEditLead(false);
       await qc.invalidateQueries({ queryKey: ["deal", dealId] });
       await qc.invalidateQueries({ queryKey: ["deals"] });
+    },
+  });
+
+  const deleteDealMut = useMutation({
+    mutationFn: async () => {
+      await api.delete(`/deals/${dealId}/`);
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["deals"] });
+      navigate(`/accounts/${(dealQ.data as any)?.account || ""}`);
     },
   });
 
@@ -307,11 +322,12 @@ export default function DealDetail() {
   const [openUpload, setOpenUpload] = useState(false);
   const [openProposal, setOpenProposal] = useState(false);
   const [openReschedule, setOpenReschedule] = useState(false);
+  const [openEditLead, setOpenEditLead] = useState(false);
   const [rescheduleAct, setRescheduleAct] = useState<any | null>(null);
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
 
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  const [valorDraft, setValorDraft] = useState("");
 
   const createActMut = useMutation({
     mutationFn: createActivity,
@@ -554,10 +570,15 @@ export default function DealDetail() {
   }
 
   useEffect(() => {
-    if (dealQ.data?.title) {
-      setTitleDraft(dealQ.data.title);
+    if (dealQ.data) {
+      setTitleDraft(dealQ.data.title || "");
+      setValorDraft(
+        dealQ.data.valor_total !== null && dealQ.data.valor_total !== undefined
+          ? String(dealQ.data.valor_total)
+          : ""
+      );
     }
-  }, [dealQ.data?.title]);
+  }, [dealQ.data]);
 
   if (dealQ.isLoading) return <div className="p-6 text-slate-700">Carregando...</div>;
   if (dealQ.isError || !dealQ.data) {
@@ -584,7 +605,8 @@ export default function DealDetail() {
 
   const busy =
     updateStageMut.isPending ||
-    updateDealTitleMut.isPending ||
+    updateDealMut.isPending ||
+    deleteDealMut.isPending ||
     createActMut.isPending ||
     uploadMut.isPending ||
     createProposalMut.isPending ||
@@ -596,8 +618,10 @@ export default function DealDetail() {
 
   const busyText = updateStageMut.isPending
     ? "Atualizando etapa..."
-    : updateDealTitleMut.isPending
-    ? "Atualizando título..."
+    : updateDealMut.isPending
+    ? "Salvando lead..."
+    : deleteDealMut.isPending
+    ? "Excluindo lead..."
     : createActMut.isPending
     ? "Salvando atividade..."
     : uploadMut.isPending
@@ -647,50 +671,31 @@ export default function DealDetail() {
 
             <div className="min-w-0">
               <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                {isEditingTitle ? (
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <input
-                      value={titleDraft}
-                      onChange={(e) => setTitleDraft(e.target.value)}
-                      className="min-w-[260px] max-w-[420px] rounded-2xl border border-slate-200 bg-white px-4 py-2 text-base font-semibold text-slate-900 outline-none focus:ring-4 focus:ring-slate-200 focus:border-slate-300"
-                      placeholder="Título do lead"
-                    />
-                    <button
-                      onClick={() => {
-                        const t = titleDraft.trim();
-                        if (!t) return;
-                        updateDealTitleMut.mutate(t);
-                      }}
-                      className={btnPrimary}
-                      type="button"
-                    >
-                      Salvar
-                    </button>
-                    <button
-                      onClick={() => {
-                        setTitleDraft(d.title || "");
-                        setIsEditingTitle(false);
-                      }}
-                      className={btnSecondary}
-                      type="button"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="text-lg font-semibold tracking-tight text-slate-900 truncate">
-                      {d.title}
-                    </div>
-                    <button
-                      onClick={() => setIsEditingTitle(true)}
-                      className={btnSecondary}
-                      type="button"
-                    >
-                      Editar título
-                    </button>
-                  </>
-                )}
+                <div className="text-lg font-semibold tracking-tight text-slate-900 truncate">
+                  {d.title}
+                </div>
+
+                <button
+                  onClick={() => setOpenEditLead(true)}
+                  className={btnSecondary}
+                  type="button"
+                >
+                  Editar lead
+                </button>
+
+                <button
+                  onClick={() => {
+                    const ok = window.confirm(
+                      `Excluir o lead "${d.title}"?\n\nEssa ação não pode ser desfeita.`
+                    );
+                    if (!ok) return;
+                    deleteDealMut.mutate();
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm transition border border-red-200 bg-white text-red-700 hover:bg-red-50 active:bg-red-100 focus:outline-none focus:ring-4 focus:ring-red-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  type="button"
+                >
+                  Excluir lead
+                </button>
 
                 <StagePill stage={d.stage} />
               </div>
@@ -1163,6 +1168,91 @@ export default function DealDetail() {
           </div>
         </div>
       </div>
+
+      {openEditLead && (
+        <Modal
+          title="Editar lead"
+          onClose={() => {
+            setOpenEditLead(false);
+            setTitleDraft(d.title || "");
+            setValorDraft(
+              d.valor_total !== null && d.valor_total !== undefined
+                ? String(d.valor_total)
+                : ""
+            );
+          }}
+        >
+          <div className="grid gap-4">
+            <Field label="Título">
+              <input
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                className={inputCls}
+                placeholder="Título do lead"
+              />
+            </Field>
+
+            <Field label="Valor total">
+              <input
+                value={valorDraft}
+                onChange={(e) => setValorDraft(e.target.value)}
+                className={inputCls}
+                placeholder="Ex.: 126280,20"
+                inputMode="decimal"
+              />
+            </Field>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenEditLead(false);
+                  setTitleDraft(d.title || "");
+                  setValorDraft(
+                    d.valor_total !== null && d.valor_total !== undefined
+                      ? String(d.valor_total)
+                      : ""
+                  );
+                }}
+                className={btnSecondary}
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                className={btnPrimary}
+                onClick={() => {
+                  const t = titleDraft.trim();
+                  if (!t) {
+                    alert("Informe o título do lead.");
+                    return;
+                  }
+
+                  const valorNormalizado = valorDraft
+                    .trim()
+                    .replace(/\./g, "")
+                    .replace(",", ".");
+                  const valorNumero =
+                    valorNormalizado === "" ? null : Number(valorNormalizado);
+
+                  if (valorNormalizado !== "" && !Number.isFinite(valorNumero)) {
+                    alert("Informe um valor válido.");
+                    return;
+                  }
+
+                  updateDealMut.mutate({
+                    title: t,
+                    valor_total: valorNumero,
+                  });
+                }}
+              >
+                Salvar alterações
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {openAct && (
         <Modal title="Registrar atividade" onClose={() => setOpenAct(false)}>
