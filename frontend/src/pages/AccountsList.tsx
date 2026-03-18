@@ -18,6 +18,11 @@ import {
   Send,
   CheckCircle2,
   XCircle,
+  ArrowDownAZ,
+  ArrowUpAZ,
+  ArrowDownUp,
+  CalendarArrowDown,
+  CalendarArrowUp,
 } from "lucide-react";
 
 function toNumber(v: any): number {
@@ -62,6 +67,9 @@ export default function AccountsList() {
 
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<"name_asc" | "name_desc" | "date_asc" | "date_desc">("name_asc");
+  const [filterOwner, setFilterOwner] = useState("");
+  const [filterComercial, setFilterComercial] = useState("");
 
   const mut = useMutation({
     mutationFn: createAccount,
@@ -161,24 +169,51 @@ export default function AccountsList() {
     return stats;
   }, [deals, proposals, dealById]);
 
-  const filtered = useMemo(() => {
-    const arr = accountsQ.data || [];
-    const s = q.trim().toLowerCase();
-    if (!s) return arr;
+  const { ownerOptions, comercialOptions } = useMemo(() => {
+    const owners = new Set<string>();
+    const comerciais = new Set<string>();
+    for (const a of (accountsQ.data || []) as any[]) {
+      if (a.owner_name) owners.add(a.owner_name);
+      if (a.comercial_responsavel_name) comerciais.add(a.comercial_responsavel_name);
+    }
+    return {
+      ownerOptions: Array.from(owners).sort(),
+      comercialOptions: Array.from(comerciais).sort(),
+    };
+  }, [accountsQ.data]);
 
-    return arr.filter((a: any) => {
-      const name = String(a.name || "").toLowerCase();
-      const cnpj = String(a.cnpj || "");
-      const city = String(a.city || "").toLowerCase();
-      const state = String(a.state || "").toLowerCase();
-      return (
-        name.includes(s) ||
-        cnpj.includes(s) ||
-        city.includes(s) ||
-        state.includes(s)
-      );
+  const filtered = useMemo(() => {
+    let arr = (accountsQ.data || []) as any[];
+    const s = q.trim().toLowerCase();
+
+    if (s) {
+      arr = arr.filter((a) => {
+        const name = String(a.name || "").toLowerCase();
+        const cnpj = String(a.cnpj || "");
+        const city = String(a.city || "").toLowerCase();
+        const state = String(a.state || "").toLowerCase();
+        return name.includes(s) || cnpj.includes(s) || city.includes(s) || state.includes(s);
+      });
+    }
+
+    if (filterOwner) {
+      arr = arr.filter((a) => a.owner_name === filterOwner);
+    }
+
+    if (filterComercial) {
+      arr = arr.filter((a) => a.comercial_responsavel_name === filterComercial);
+    }
+
+    arr = [...arr].sort((a, b) => {
+      if (sortBy === "name_asc") return String(a.name || "").localeCompare(String(b.name || ""), "pt-BR");
+      if (sortBy === "name_desc") return String(b.name || "").localeCompare(String(a.name || ""), "pt-BR");
+      if (sortBy === "date_desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      if (sortBy === "date_asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      return 0;
     });
-  }, [accountsQ.data, q]);
+
+    return arr;
+  }, [accountsQ.data, q, filterOwner, filterComercial, sortBy]);
 
   const isLoading =
     accountsQ.isLoading || dealsQ.isLoading || proposalsQ.isLoading;
@@ -243,6 +278,71 @@ export default function AccountsList() {
               <Plus className="h-4 w-4" />
               Nova construtora
             </button>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {/* Ordenação */}
+            <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1">
+              <span className="pl-2 text-xs text-slate-500 flex items-center gap-1">
+                <ArrowDownUp className="h-3.5 w-3.5" /> Ordenar:
+              </span>
+              {(
+                [
+                  { value: "name_asc",  label: "A→Z",        icon: <ArrowDownAZ className="h-3.5 w-3.5" /> },
+                  { value: "name_desc", label: "Z→A",        icon: <ArrowUpAZ className="h-3.5 w-3.5" /> },
+                  { value: "date_desc", label: "Mais recente", icon: <CalendarArrowDown className="h-3.5 w-3.5" /> },
+                  { value: "date_asc",  label: "Mais antigo",  icon: <CalendarArrowUp className="h-3.5 w-3.5" /> },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSortBy(opt.value)}
+                  className={`inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-medium transition ${
+                    sortBy === opt.value
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  {opt.icon}
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Filtro proprietário */}
+            <select
+              value={filterOwner}
+              onChange={(e) => setFilterOwner(e.target.value)}
+              className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-4 focus:ring-slate-200"
+            >
+              <option value="">Todos os proprietários</option>
+              {ownerOptions.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+
+            {/* Filtro comercial */}
+            <select
+              value={filterComercial}
+              onChange={(e) => setFilterComercial(e.target.value)}
+              className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-4 focus:ring-slate-200"
+            >
+              <option value="">Todos os comerciais</option>
+              {comercialOptions.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+
+            {/* Limpar filtros */}
+            {(filterOwner || filterComercial || sortBy !== "name_asc") && (
+              <button
+                onClick={() => { setFilterOwner(""); setFilterComercial(""); setSortBy("name_asc"); }}
+                className="inline-flex items-center gap-1 rounded-2xl border border-slate-200 px-3 py-2 text-xs text-slate-500 hover:bg-slate-100 transition"
+              >
+                <X className="h-3.5 w-3.5" />
+                Limpar filtros
+              </button>
+            )}
           </div>
 
           {mut.isPending && (

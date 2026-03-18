@@ -435,6 +435,7 @@ export default function DealsKanban() {
                         <DealCard
                           key={deal.id}
                           deal={deal}
+                          proposals={proposalsByDeal[deal.id] || []}
                           displayValue={effectiveDealValue(deal)}
                           onDragStart={() => setDraggingId(deal.id)}
                           onChangeStage={(stage) =>
@@ -474,27 +475,21 @@ export default function DealsKanban() {
 
 function DealCard({
   deal,
+  proposals,
   displayValue,
   onDragStart,
   onChangeStage,
 }: {
   deal: DealWithExtras;
+  proposals: Proposal[];
   displayValue: number;
   onDragStart: () => void;
   onChangeStage: (stage: DealStage) => void;
 }) {
-  const brl = formatBRL(displayValue);
-  const projectNames =
-    Array.isArray(deal.project_names) && deal.project_names.length > 0
-      ? deal.project_names.filter(Boolean)
-      : [];
+  const totalBrl = formatBRL(displayValue);
 
-  const obraTexto =
-    projectNames.length > 0
-      ? projectNames.join(", ")
-      : deal.project
-      ? deal.project_name || `#${deal.project}`
-      : "-";
+  // Propostas não rejeitadas, com empreendimentos e valor
+  const activeProposals = proposals.filter((p) => p.status !== "REJECTED");
 
   return (
     <div
@@ -503,14 +498,18 @@ function DealCard({
       className="group cursor-grab rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition
                  hover:border-slate-300 hover:shadow-md active:cursor-grabbing"
     >
+      {/* Construtora — clicável */}
       <div className="flex items-start justify-between gap-2">
         <Link
           to={`/deals/${deal.id}`}
-          className="text-sm font-semibold leading-snug text-slate-900 hover:underline"
+          className="flex items-start gap-2 min-w-0 flex-1"
           onClick={(e) => e.stopPropagation()}
           title="Abrir detalhes"
         >
-          {deal.title}
+          <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+          <span className="text-sm font-bold leading-snug text-slate-900 hover:underline break-words">
+            {deal.account_name || `Construtora #${deal.account}`}
+          </span>
         </Link>
 
         <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600">
@@ -518,44 +517,41 @@ function DealCard({
         </span>
       </div>
 
-      <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
-        <Building2 className="h-4 w-4 text-slate-400" />
-        <span className="truncate">
-          {deal.account_name || `Construtora #${deal.account}`}
-        </span>
-      </div>
-
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-xs text-slate-600 min-w-0">
-          <Building2 className="h-4 w-4 text-slate-400" />
-          <span className="truncate">
-            {deal.account_name || `Construtora #${deal.account}`}
-          </span>
+      {/* Empreendimentos com valor de cada proposta */}
+      {activeProposals.length > 0 ? (
+        <div className="mt-2 flex flex-col gap-1 pl-6">
+          {activeProposals.map((p) => {
+            const names = (p.project_names || []).filter(Boolean);
+            const label = names.length > 0 ? names.join(", ") : "Sem empreendimento";
+            const valor = formatBRL(parseMoney(p.valor_total));
+            return (
+              <div key={p.id} className="flex items-start justify-between gap-2 text-xs">
+                <span className="text-slate-600 leading-snug">{label}</span>
+                {valor && (
+                  <span className="shrink-0 font-semibold text-slate-800">{valor}</span>
+                )}
+              </div>
+            );
+          })}
         </div>
-      </div>
+      ) : null}
 
+      {/* Comercial */}
       <div className="mt-2">
         <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
           <UserRound className="h-3.5 w-3.5" />
-          <span className="truncate">
-            Comercial: {deal.owner_name || "-"}
-          </span>
+          <span className="truncate">Comercial: {deal.owner_name || "-"}</span>
         </span>
       </div>
 
-      {obraTexto !== "-" && (
-        <div className="mt-1 text-xs text-slate-500 break-words">
-          Empreendimentos: {obraTexto}
-        </div>
-      )}
-
+      {/* Total + Último contato */}
       <div className="mt-3 grid gap-2">
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center gap-2 text-slate-600">
             <BadgeDollarSign className="h-4 w-4 text-slate-400" />
-            <span>Valor</span>
+            <span>Total</span>
           </div>
-          <div className="font-semibold text-slate-900">{brl || "-"}</div>
+          <div className="font-semibold text-slate-900">{totalBrl || "-"}</div>
         </div>
 
         <div className="flex items-center justify-between text-xs">

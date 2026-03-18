@@ -6,6 +6,8 @@ from .models import Deal, Activity, DealAttachment, DealBarterItem, Proposal
 class DealSerializer(serializers.ModelSerializer):
     owner_name = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
+    account_name = serializers.SerializerMethodField()
+    project_names = serializers.SerializerMethodField()
 
     class Meta:
         model = Deal
@@ -20,6 +22,14 @@ class DealSerializer(serializers.ModelSerializer):
         if not obj.created_by:
             return None
         return obj.created_by.get_full_name() or obj.created_by.username
+
+    def get_account_name(self, obj):
+        if not obj.account:
+            return None
+        return obj.account.name
+
+    def get_project_names(self, obj):
+        return list(obj.projects.values_list("name", flat=True))
 
 
 class ActivitySerializer(serializers.ModelSerializer):
@@ -42,6 +52,11 @@ class DealBarterItemSerializer(serializers.ModelSerializer):
 
 
 class ProposalSerializer(serializers.ModelSerializer):
+    project_names = serializers.SerializerMethodField()
+
     class Meta:
         model = Proposal
         fields = "__all__"
+
+    def get_project_names(self, obj):
+        return list(obj.projects.values_list("name", flat=True))

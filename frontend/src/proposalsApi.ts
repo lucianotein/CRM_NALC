@@ -8,6 +8,7 @@ export type Proposal = {
   deal: number;
 
   projects: number[];
+  project_names?: string[];
 
   version_label: string;
   status: ProposalStatus;
