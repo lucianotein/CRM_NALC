@@ -1,5 +1,9 @@
-from django.contrib.auth import get_user_model
+from datetime import timedelta
 
+from django.contrib.auth import get_user_model
+from django.utils import timezone
+
+from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
@@ -7,7 +11,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
 
-from deals.models import Deal
+from deals.models import Deal, Activity
 
 from .models import Account, ContactPerson
 from .serializers import (
@@ -124,6 +128,53 @@ class AccountViewSet(ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class AdminStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not is_crm_admin(request.user):
+            raise PermissionDenied("Acesso restrito a administradores.")
+
+        days = max(1, min(int(request.query_params.get("days", 10)), 365))
+        since = timezone.now() - timedelta(days=days)
+
+        users = User.objects.select_related("profile").order_by("first_name", "username")
+
+        result = []
+        for user in users:
+            acts_period = Activity.objects.filter(created_by=user, created_at__gte=since)
+
+            by_type = {}
+            for t in Activity.Type.values:
+                by_type[t] = acts_period.filter(type=t).count()
+
+            last_act = (
+                Activity.objects.filter(created_by=user)
+                .order_by("-created_at")
+                .values_list("created_at", flat=True)
+                .first()
+            )
+
+            result.append({
+                "id": user.id,
+                "username": user.username,
+                "full_name": user.get_full_name() or user.username,
+                "role": get_user_role(user),
+                "stats": {
+                    "activities_total": acts_period.count(),
+                    "activities_by_type": by_type,
+                    "activities_done": acts_period.filter(status=Activity.Status.DONE).count(),
+                    "activities_pending": acts_period.filter(status=Activity.Status.PENDING).count(),
+                    "deals_total": Deal.objects.filter(owner=user).count(),
+                    "accounts_created": Account.objects.filter(owner=user).count(),
+                    "accounts_comercial": Account.objects.filter(comercial_responsavel=user).count(),
+                    "last_activity_at": last_act.isoformat() if last_act else None,
+                },
+            })
+
+        return Response({"days": days, "since": since.isoformat(), "users": result})
 
 
 class ContactPersonViewSet(ModelViewSet):

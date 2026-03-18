@@ -6,6 +6,7 @@ import {
   KanbanSquare,
   Building2,
   LogOut,
+  ShieldCheck,
 } from "lucide-react";
 
 import Login from "./pages/Login";
@@ -17,10 +18,12 @@ import DealDetail from "./pages/DealDetail";
 import AccountsList from "./pages/AccountsList";
 import AccountDetail from "./pages/AccountDetail";
 
+import AdminPanel from "./pages/AdminPanel";
+
 import { api } from "./api";
 import nalcLogo from "./assets/nalc-logo.png";
 
-type Me = { id: number; username: string };
+type Me = { id: number; username: string; role?: string };
 
 async function me(): Promise<Me> {
   const { data } = await api.get("/auth/me/");
@@ -104,6 +107,13 @@ function Topbar() {
             <Building2 className="h-4 w-4" />
             Construtoras
           </Link>
+
+          {meQ.data?.role === "ADMINISTRADOR" && (
+            <Link to="/admin" className={navCls(isActive("/admin"))}>
+              <ShieldCheck className="h-4 w-4" />
+              Administrar CRM
+            </Link>
+          )}
         </div>
 
         {/* Usuário */}
@@ -148,6 +158,8 @@ export default function App() {
 
                   <Route path="/accounts" element={<AccountsList />} />
                   <Route path="/accounts/:id" element={<AccountDetail />} />
+
+                  <Route path="/admin" element={<AdminPanel />} />
 
                   <Route
                     path="*"

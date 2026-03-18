@@ -1,6 +1,7 @@
 #config/api_urls.py
+from django.urls import path
 from rest_framework.routers import DefaultRouter
-from accounts.views import CRMUserViewSet, AccountViewSet, ContactPersonViewSet
+from accounts.views import CRMUserViewSet, AccountViewSet, ContactPersonViewSet, AdminStatsView
 from projects.views import ProjectViewSet
 from deals.views import (
     DealViewSet,
@@ -21,4 +22,6 @@ router.register("barter-items", DealBarterItemViewSet)
 router.register("proposals", ProposalViewSet)
 router.register("users", CRMUserViewSet, basename="users")
 
-urlpatterns = router.urls
+urlpatterns = router.urls + [
+    path("admin/stats/", AdminStatsView.as_view(), name="admin-stats"),
+]

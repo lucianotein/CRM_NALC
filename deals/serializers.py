@@ -33,10 +33,27 @@ class DealSerializer(serializers.ModelSerializer):
 
 
 class ActivitySerializer(serializers.ModelSerializer):
+    deal_title = serializers.SerializerMethodField()
+    deal_account_name = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Activity
         fields = "__all__"
         read_only_fields = ["created_by", "created_at"]
+
+    def get_deal_title(self, obj):
+        return obj.deal.title if obj.deal else None
+
+    def get_deal_account_name(self, obj):
+        if obj.deal and obj.deal.account:
+            return obj.deal.account.name
+        return None
+
+    def get_created_by_name(self, obj):
+        if not obj.created_by:
+            return None
+        return obj.created_by.get_full_name() or obj.created_by.username
 
 
 class DealAttachmentSerializer(serializers.ModelSerializer):

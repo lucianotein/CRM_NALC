@@ -69,7 +69,9 @@ class ActivityViewSet(ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = Activity.objects.select_related("deal", "created_by").order_by("-created_at")
+        qs = Activity.objects.select_related(
+            "deal", "deal__account", "created_by"
+        ).order_by("-created_at")
 
         if not is_crm_admin(self.request.user):
             qs = qs.filter(deal__owner=self.request.user)
@@ -81,6 +83,18 @@ class ActivityViewSet(ModelViewSet):
         status = self.request.query_params.get("status")
         if status:
             qs = qs.filter(status=status)
+
+        activity_type = self.request.query_params.get("type")
+        if activity_type:
+            qs = qs.filter(type=activity_type)
+
+        created_by = self.request.query_params.get("created_by")
+        if created_by and is_crm_admin(self.request.user):
+            qs = qs.filter(created_by_id=created_by)
+
+        since = self.request.query_params.get("since")
+        if since:
+            qs = qs.filter(created_at__gte=since)
 
         return qs
 
