@@ -8,6 +8,7 @@ import ProposalForm from "../components/ProposalForm";
 
 import {
   createActivity,
+  deleteActivity,
   listActivities,
   type Activity,
   type ActivityType,
@@ -46,6 +47,7 @@ import {
   Loader2,
   CalendarClock,
   Hash,
+  Trash2,
 } from "lucide-react";
 
 /** ===========================
@@ -467,6 +469,17 @@ export default function DealDetail() {
     },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["activities", dealId] });
+      await qc.invalidateQueries({ queryKey: ["deal", dealId] });
+      await qc.invalidateQueries({ queryKey: ["deals"] });
+    },
+  });
+
+  const deleteActivityMut = useMutation({
+    mutationFn: (activityId: number) => deleteActivity(activityId),
+    onSuccess: async (_, activityId) => {
+      qc.setQueryData(["activities", dealId], (old: any) =>
+        (old || []).filter((a: any) => a.id !== activityId)
+      );
       await qc.invalidateQueries({ queryKey: ["deal", dealId] });
       await qc.invalidateQueries({ queryKey: ["deals"] });
     },
@@ -1045,6 +1058,19 @@ export default function DealDetail() {
                               Pendente
                             </button>
                           ) : null}
+
+                          <button
+                            onClick={() => {
+                              if (confirm("Excluir esta atividade?")) {
+                                deleteActivityMut.mutate(a.id);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-red-600 border border-red-200 hover:bg-red-50 transition-colors"
+                            title="Excluir atividade"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Excluir
+                          </button>
                         </div>
                       </div>
                     </div>

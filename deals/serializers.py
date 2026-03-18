@@ -26,6 +26,7 @@ class ActivitySerializer(serializers.ModelSerializer):
     class Meta:
         model = Activity
         fields = "__all__"
+        read_only_fields = ["created_by", "created_at"]
 
 
 class DealAttachmentSerializer(serializers.ModelSerializer):

@@ -42,6 +42,11 @@ export async function createActivity(
   return data;
 }
 
+export async function deleteActivity(activityId: number): Promise<void> {
+  await ensureCsrf();
+  await api.delete(`/activities/${activityId}/`);
+}
+
 export async function markActivityDone(activityId: number): Promise<Activity> {
   await ensureCsrf();
   const { data } = await api.post(`/activities/${activityId}/mark-done/`);
