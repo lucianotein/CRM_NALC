@@ -19,7 +19,6 @@ import {
   uploadAttachment,
   deleteAttachment,
   type AttachmentType,
-  type DealAttachment,
 } from "../attachmentsApi";
 
 import {
