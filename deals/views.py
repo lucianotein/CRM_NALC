@@ -240,7 +240,7 @@ class ProposalViewSet(ModelViewSet):
             super()
             .get_queryset()
             .select_related("deal", "created_by")
-            .prefetch_related("projects")
+            .prefetch_related("projects", "attachments")
         )
 
         if not is_crm_admin(self.request.user):
@@ -251,6 +251,11 @@ class ProposalViewSet(ModelViewSet):
             qs = qs.filter(deal_id=deal_id)
 
         return qs
+
+    def destroy(self, request, *args, **kwargs):
+        if not is_crm_admin(request.user):
+            return Response({"detail": "Apenas administradores podem excluir propostas."}, status=403)
+        return super().destroy(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)

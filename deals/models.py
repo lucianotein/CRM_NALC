@@ -99,6 +99,13 @@ class DealAttachment(models.Model):
         OUTRO = "OUTRO", "Outro"
 
     deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="attachments")
+    proposal = models.ForeignKey(
+        "deals.Proposal",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="attachments",
+    )
     type = models.CharField(
         max_length=20, choices=Type.choices, default=Type.PROPOSTA, db_index=True
     )

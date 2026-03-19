@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep:*)",
+      "Bash(find C:LucianoExtrasCRM -path *deals* -name views.py -o -path *deals* -name urls.py)",
+      "Bash(find C:LucianoExtrasCRM -path *deals* -name serializers.py)",
+      "Bash(grep -r file_url C:LucianoExtrasCRM --include=*.py)",
+      "Bash(grep -r \"build_absolute_uri\\\\|request.build_absolute_uri\" C:LucianoExtrasCRM --include=*.py)",
+      "Bash(find C:LucianoExtrasCRM -name *.py -path */deals* -o -name *.py -path */accounts*)",
+      "Bash(grep -r FileField C:LucianoExtrasCRM/deals --include=*.py)",
+      "Bash(python manage.py shell -c \":*)"
+    ]
+  }
+}

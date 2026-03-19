@@ -12,6 +12,7 @@ class DealSerializer(serializers.ModelSerializer):
     class Meta:
         model = Deal
         fields = "__all__"
+        read_only_fields = ["owner", "created_by"]
 
     def get_owner_name(self, obj):
         if not obj.owner:
@@ -57,9 +58,18 @@ class ActivitySerializer(serializers.ModelSerializer):
 
 
 class DealAttachmentSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
     class Meta:
         model = DealAttachment
         fields = "__all__"
+        read_only_fields = ["created_by", "created_at"]
+
+    def get_file_url(self, obj):
+        request = self.context.get("request")
+        if obj.file and request:
+            return request.build_absolute_uri(obj.file.url)
+        return None
 
 
 class DealBarterItemSerializer(serializers.ModelSerializer):
@@ -70,10 +80,26 @@ class DealBarterItemSerializer(serializers.ModelSerializer):
 
 class ProposalSerializer(serializers.ModelSerializer):
     project_names = serializers.SerializerMethodField()
+    attachment = serializers.SerializerMethodField()
 
     class Meta:
         model = Proposal
         fields = "__all__"
+        read_only_fields = ["created_by", "created_at"]
 
     def get_project_names(self, obj):
         return list(obj.projects.values_list("name", flat=True))
+
+    def get_attachment(self, obj):
+        # Tenta via FK direto (novos uploads)
+        att = obj.attachments.order_by("-created_at").first()
+        if not att and obj.version_label:
+            # Fallback para dados legados: busca por deal + version_label
+            att = DealAttachment.objects.filter(
+                deal=obj.deal,
+                type=DealAttachment.Type.PROPOSTA,
+                version_label=obj.version_label,
+            ).order_by("-created_at").first()
+        if not att:
+            return None
+        return DealAttachmentSerializer(att, context=self.context).data

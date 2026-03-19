@@ -13,6 +13,12 @@ type ProposalFormValues = Partial<Proposal> & {
   _file?: File | null;
 };
 
+type CurrentAttachment = {
+  id: number;
+  file?: string;
+  file_url?: string;
+};
+
 type Props = {
   loading: boolean;
   projects: ProjectOption[];
@@ -22,6 +28,9 @@ type Props = {
   };
   submitLabel?: string;
   showFileField?: boolean;
+  isEditing?: boolean;
+  currentAttachment?: CurrentAttachment | null;
+  onDeleteAttachment?: (id: number) => void;
 };
 
 const inputCls =
@@ -129,6 +138,9 @@ export default function ProposalForm({
   initialData,
   submitLabel = "Salvar proposta",
   showFileField = true,
+  isEditing = false,
+  currentAttachment = null,
+  onDeleteAttachment,
 }: Props) {
   const [versionLabel, setVersionLabel] = useState(initialData?.version_label || "v1");
   const [status, setStatus] = useState<ProposalStatus>(
@@ -199,7 +211,7 @@ export default function ProposalForm({
       elevEntregaMissing ||
       obraEntregaInvalid ||
       elevEntregaInvalid ||
-      elevEntregaPastMonth
+      (!isEditing && elevEntregaPastMonth)
     );
   }, [
     obraEntregaMissing,
@@ -207,6 +219,7 @@ export default function ProposalForm({
     obraEntregaInvalid,
     elevEntregaInvalid,
     elevEntregaPastMonth,
+    isEditing,
   ]);
 
   return (
@@ -404,16 +417,48 @@ export default function ProposalForm({
       </div>
 
       {showFileField && (
-        <Field label="Arquivo da proposta (opcional)">
-          <input
-            type="file"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900"
-          />
-          <div className="text-[11px] text-slate-500">
-            Se enviar aqui, a proposta pode ser anexada como <b>PROPOSTA</b>.
-          </div>
-        </Field>
+        <div className="grid gap-1">
+          <label className="text-xs font-semibold text-slate-700">
+            Arquivo da proposta
+          </label>
+
+          {currentAttachment ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <a
+                  href={currentAttachment.file_url || currentAttachment.file}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="truncate text-sm text-blue-600 underline underline-offset-2 hover:text-blue-800"
+                >
+                  Abrir anexo atual
+                </a>
+                <button
+                  type="button"
+                  onClick={() => onDeleteAttachment?.(currentAttachment.id)}
+                  className="shrink-0 rounded-xl border border-red-200 bg-white px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 active:bg-red-100"
+                >
+                  Excluir
+                </button>
+              </div>
+              <div className="mt-2 text-[11px] text-slate-500">
+                Cada proposta pode ter apenas 1 arquivo. Para substituir, exclua o atual primeiro.
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-1">
+              <input
+                type="file"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900"
+              />
+              <div className="text-[11px] text-slate-500">
+                Cada proposta suporta apenas <b>1 arquivo</b>. Outros tipos de anexo
+                (contrato, memorial etc.) devem ser adicionados diretamente na oportunidade.
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       <Field label="Observações">

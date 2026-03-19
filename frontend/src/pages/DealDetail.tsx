@@ -17,7 +17,9 @@ import {
 import {
   listAttachments,
   uploadAttachment,
+  deleteAttachment,
   type AttachmentType,
+  type DealAttachment,
 } from "../attachmentsApi";
 
 import {
@@ -246,6 +248,11 @@ const inputCls =
   "outline-none focus:ring-4 focus:ring-slate-200 focus:border-slate-300";
 
 
+async function getMe() {
+  const { data } = await api.get("/auth/me/");
+  return data as { id: number; username: string; role?: string };
+}
+
 /** ===========================
  * Page
  * =========================== */
@@ -279,6 +286,9 @@ export default function DealDetail() {
     queryFn: () => listProposals(dealId),
     enabled: Number.isFinite(dealId),
   });
+
+  const meQ = useQuery({ queryKey: ["me"], queryFn: getMe });
+  const isAdmin = meQ.data?.role === "ADMINISTRADOR";
 
   const projectsQ = useQuery({
     queryKey: ["projects"],
@@ -390,6 +400,7 @@ export default function DealDetail() {
           deal: input.proposal.deal,
           type: "PROPOSTA",
           version_label: created.version_label || "",
+          proposal: created.id,
           file: input.file,
         });
       }
@@ -402,6 +413,11 @@ export default function DealDetail() {
       await qc.invalidateQueries({ queryKey: ["attachments", dealId] });
       await qc.invalidateQueries({ queryKey: ["deal", dealId] });
       await qc.invalidateQueries({ queryKey: ["deals"] });
+    },
+    onError: (err: any) => {
+      const data = err?.response?.data;
+      const msg = data ? JSON.stringify(data) : "Erro ao salvar proposta.";
+      alert(msg);
     },
   });
 
@@ -432,6 +448,7 @@ export default function DealDetail() {
           deal: dealId,
           type: "PROPOSTA",
           version_label: data.version_label || "",
+          proposal: input.proposalId,
           file: input.file,
         });
       }
@@ -442,6 +459,32 @@ export default function DealDetail() {
       setEditingProposal(null);
       await qc.invalidateQueries({ queryKey: ["proposals", dealId] });
       await qc.invalidateQueries({ queryKey: ["attachments", dealId] });
+    },
+    onError: (err: any) => {
+      const data = err?.response?.data;
+      const msg = data ? JSON.stringify(data) : "Erro ao atualizar proposta.";
+      alert(msg);
+    },
+  });
+
+  const deleteProposalMut = useMutation({
+    mutationFn: (proposalId: number) => api.delete(`/proposals/${proposalId}/`),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["proposals", dealId] });
+    },
+    onError: () => {
+      alert("Erro ao excluir proposta.");
+    },
+  });
+
+  const deleteAttachmentMut = useMutation({
+    mutationFn: (attachmentId: number) => deleteAttachment(attachmentId),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["attachments", dealId] });
+      await qc.invalidateQueries({ queryKey: ["proposals", dealId] });
+    },
+    onError: () => {
+      alert("Erro ao excluir anexo.");
     },
   });
 
@@ -888,13 +931,25 @@ export default function DealDetail() {
                               <Hash className="h-3.5 w-3.5 text-slate-400" /> #{p.id}
                             </span>
                           </div>
-                          <div className="mt-3">
+                          <div className="mt-3 flex flex-col gap-2">
                             <button
                               onClick={() => setEditingProposal(p)}
                               className={btnSecondary}
                             >
                               Editar
                             </button>
+                            {isAdmin && (
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Excluir proposta ${p.version_label ? `"${p.version_label}"` : `#${p.id}`}? Esta ação não pode ser desfeita.`)) {
+                                    deleteProposalMut.mutate(p.id);
+                                  }
+                                }}
+                                className="inline-flex w-full items-center justify-center rounded-2xl border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 active:bg-red-100"
+                              >
+                                Excluir
+                              </button>
+                            )}
                           </div>
 
                           {url ? (
@@ -1048,16 +1103,6 @@ export default function DealDetail() {
                             </button>
                           ) : null}
 
-                          {a.status === "DONE" ? (
-                            <button
-                              onClick={() => markPendingMut.mutate(a.id)}
-                              className={btnSecondary}
-                              title="Voltar para pendente"
-                            >
-                              <Clock className="h-4 w-4" />
-                              Pendente
-                            </button>
-                          ) : null}
 
                           <button
                             onClick={() => {
@@ -1326,6 +1371,7 @@ export default function DealDetail() {
         >
           <ProposalForm
             loading={updateProposalMut.isPending}
+            isEditing
             projects={accountProjects.map((p) => ({
               id: p.id,
               name: p.name,
@@ -1335,6 +1381,12 @@ export default function DealDetail() {
               ...editingProposal,
               projects: ((editingProposal as any).projects || []) as number[],
             }}
+            currentAttachment={
+              (proposals.find((p) => p.id === editingProposal.id) as any)?.attachment || null
+            }
+            onDeleteAttachment={(id: number) =>
+              deleteAttachmentMut.mutate(id)
+            }
             submitLabel="Salvar alterações"
             showFileField={true}
             onSubmit={(payload) =>

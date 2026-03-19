@@ -27,6 +27,13 @@ export type Proposal = {
 
   created_at: string;
   created_by: number;
+
+  attachment?: {
+    id: number;
+    file: string;
+    file_url?: string;
+    version_label: string;
+  } | null;
 };
 
 // ✅ Continua existindo (para a tela do DealDetail, por exemplo)

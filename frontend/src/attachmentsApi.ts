@@ -19,16 +19,22 @@ export async function listAttachments(dealId: number): Promise<DealAttachment[]>
   return data;
 }
 
+export async function deleteAttachment(id: number): Promise<void> {
+  await api.delete(`/attachments/${id}/`);
+}
+
 export async function uploadAttachment(payload: {
   deal: number;
   type: AttachmentType;
   version_label?: string;
+  proposal?: number;
   file: File;
 }): Promise<DealAttachment> {
   const fd = new FormData();
   fd.append("deal", String(payload.deal));
   fd.append("type", payload.type);
   fd.append("version_label", payload.version_label || "");
+  if (payload.proposal != null) fd.append("proposal", String(payload.proposal));
   fd.append("file", payload.file);
 
   const { data } = await api.post(`/attachments/`, fd, {

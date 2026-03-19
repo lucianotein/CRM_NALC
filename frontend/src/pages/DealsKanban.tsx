@@ -517,7 +517,7 @@ function DealCard({
         </span>
       </div>
 
-      {/* Empreendimentos com valor de cada proposta */}
+      {/* Empreendimentos com valor de cada proposta — ou título/valor do deal se não houver propostas */}
       {activeProposals.length > 0 ? (
         <div className="mt-2 flex flex-col gap-1 pl-6">
           {activeProposals.map((p) => {
@@ -534,7 +534,20 @@ function DealCard({
             );
           })}
         </div>
-      ) : null}
+      ) : (
+        <div className="mt-2 flex items-start justify-between gap-2 pl-6 text-xs">
+          <span className="text-slate-600 leading-snug">
+            {(deal as any).project_names?.length > 0
+              ? (deal as any).project_names.join(", ")
+              : (deal as any).title || ""}
+          </span>
+          {formatBRL(parseMoney((deal as any).valor_total)) && (
+            <span className="shrink-0 font-semibold text-slate-800">
+              {formatBRL(parseMoney((deal as any).valor_total))}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Comercial */}
       <div className="mt-2">
