@@ -261,10 +261,21 @@ export default function Dashboard() {
     return s;
   }, [filteredDealsByCommercial, proposalsByDeal]);
 
-  const grandTotal = useMemo(() => {
-    let t = 0;
-    for (const d of filteredDealsByCommercial as any[]) t += effectiveDealValue(d);
-    return t;
+  const funnelTotals = useMemo(() => {
+    const openStages = ["LEAD", "CONTATO", "PROPOSTA", "NEGOCIACAO"];
+    let aberto = 0;
+    let ganho = 0;
+    let perdido = 0;
+
+    for (const d of filteredDealsByCommercial as any[]) {
+      const stage = d.stage || "LEAD";
+      const val = effectiveDealValue(d);
+      if (openStages.includes(stage)) aberto += val;
+      else if (stage === "FECHADO_GANHO") ganho += val;
+      else if (stage === "PERDIDO") perdido += val;
+    }
+
+    return { aberto, ganho, perdido };
   }, [filteredDealsByCommercial, proposalsByDeal]);
 
   const userTotals = useMemo(() => {
@@ -339,42 +350,39 @@ export default function Dashboard() {
       {
         accountId: number | null;
         accountName: string;
-        sentValue: number;
-        sentCount: number;
+        totalValue: number;
+        dealCount: number;
       }
     > = {};
 
-    for (const p of proposals as any[]) {
-      if (p.status !== "SENT") continue;
+    for (const d of filteredDealsByCommercial as any[]) {
+      const accountId = Number(d.account || 0) || null;
+      if (!accountId) continue;
 
-      const deal = dealById[Number(p.deal)];
-      if (!deal) continue;
-
-      const accountId = Number(deal.account || 0) || null;
-      const accountName = deal.account_name || `Construtora #${deal.account}`;
-      const key = String(accountId ?? accountName);
-      const valor = Number(toNumber(p.valor_total) || 0);
+      const accountName = d.account_name || `Construtora #${d.account}`;
+      const key = String(accountId);
+      const val = effectiveDealValue(d);
 
       if (!rankingMap[key]) {
         rankingMap[key] = {
           accountId,
           accountName,
-          sentValue: 0,
-          sentCount: 0,
+          totalValue: 0,
+          dealCount: 0,
         };
       }
 
-      rankingMap[key].sentValue += valor;
-      rankingMap[key].sentCount += 1;
+      rankingMap[key].totalValue += val;
+      rankingMap[key].dealCount += 1;
     }
 
     return Object.values(rankingMap)
       .sort((a, b) => {
-        if (b.sentValue !== a.sentValue) return b.sentValue - a.sentValue;
-        return b.sentCount - a.sentCount;
+        if (b.totalValue !== a.totalValue) return b.totalValue - a.totalValue;
+        return b.dealCount - a.dealCount;
       })
       .slice(0, 5);
-  }, [proposals, dealById]);
+  }, [filteredDealsByCommercial, proposalsByDeal]);
 
   const filteredCommitments = useMemo(() => {
     if (!isAdmin || selectedCommercialIds.length === 0) return commitments;
@@ -569,8 +577,42 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="mt-4 text-2xl font-semibold text-slate-900">
-                {brl(grandTotal)}
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-blue-600">
+                    Em aberto
+                  </div>
+                  <div className="mt-1 text-xs text-blue-500">
+                    Lead · Contato · Proposta · Negociação
+                  </div>
+                  <div className="mt-2 text-xl font-bold text-blue-800">
+                    {brl(funnelTotals.aberto)}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                    Fechado ganho
+                  </div>
+                  <div className="mt-1 text-xs text-emerald-500">
+                    Oportunidades convertidas
+                  </div>
+                  <div className="mt-2 text-xl font-bold text-emerald-800">
+                    {brl(funnelTotals.ganho)}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-red-100 bg-red-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-red-500">
+                    Perdido
+                  </div>
+                  <div className="mt-1 text-xs text-red-400">
+                    Oportunidades encerradas sem venda
+                  </div>
+                  <div className="mt-2 text-xl font-bold text-red-700">
+                    {brl(funnelTotals.perdido)}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -584,7 +626,7 @@ export default function Dashboard() {
                     Ranking de construtoras
                   </div>
                   <div className="text-xs text-slate-500">
-                    Maiores valores em propostas enviadas
+                    Maiores valores em oportunidades abertas e fechadas
                   </div>
                 </div>
               </div>
@@ -601,15 +643,15 @@ export default function Dashboard() {
                           {idx + 1}. {item.accountName}
                         </div>
                         <div className="mt-1 text-xs text-slate-600">
-                          Propostas enviadas:{" "}
+                          Oportunidades:{" "}
                           <span className="font-semibold text-slate-900">
-                            {item.sentCount}
+                            {item.dealCount}
                           </span>
                         </div>
                       </div>
 
                       <div className="text-sm font-semibold text-slate-900 shrink-0">
-                        {brl(item.sentValue)}
+                        {brl(item.totalValue)}
                       </div>
                     </div>
                   </div>

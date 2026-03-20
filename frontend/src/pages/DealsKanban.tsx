@@ -700,6 +700,9 @@ function NewDealForm({
           className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400
                      outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-200"
         />
+        <div className="text-[11px] text-red-600 font-medium">
+          Campo opcional — se ainda não souber o valor, deixe em branco ou zero. Você pode detalhar depois via proposta. O valor informado aqui será somado ao pipeline.
+        </div>
         <div className="text-[11px] text-slate-500">
           Dica: digite só números (ex: 250000) ou com vírgula (ex: 250000,50).
         </div>

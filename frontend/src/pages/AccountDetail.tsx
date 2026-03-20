@@ -1688,6 +1688,9 @@ function DealForm({
           inputMode="numeric"
           className={inputCls}
         />
+        <div className="text-[11px] text-red-600 font-medium mt-1">
+          Campo opcional — se ainda não souber o valor, deixe em branco ou zero. Você pode detalhar depois via proposta. O valor informado aqui será somado ao pipeline.
+        </div>
       </Field>
 
       {errorMessage && (
