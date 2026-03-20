@@ -127,6 +127,8 @@ export default function AccountsList() {
       return stats[accountId];
     }
 
+    const dealsWithProposals = new Set<number>();
+
     for (const d of deals as any[]) {
       const accountId = Number(d.account);
       if (!Number.isFinite(accountId)) continue;
@@ -139,6 +141,8 @@ export default function AccountsList() {
 
       const deal = dealById[dealId];
       if (!deal) continue;
+
+      dealsWithProposals.add(dealId);
 
       const accountId = Number(deal.account);
       if (!Number.isFinite(accountId)) continue;
@@ -164,6 +168,17 @@ export default function AccountsList() {
         s.rejectedTotal += num;
         s.rejectedCount += 1;
       }
+    }
+
+    // Deals sem propostas: usa o valor do próprio deal (lead value), igual ao AccountDetail
+    for (const d of deals as any[]) {
+      if (dealsWithProposals.has(d.id)) continue;
+      const accountId = Number(d.account);
+      if (!Number.isFinite(accountId)) continue;
+      const rawValue = d.valor_total ?? d.value ?? d.amount ?? d.valor ?? null;
+      const n = toNumber(rawValue);
+      if (!Number.isFinite(n)) continue;
+      ensure(accountId).proposalTotal += n;
     }
 
     return stats;
@@ -419,7 +434,7 @@ export default function AccountsList() {
 
                       <span className="inline-flex items-center gap-2">
                         <BadgeDollarSign className="h-4 w-4 text-slate-400" />
-                        Total propostas:{" "}
+                        Valor no pipeline:{" "}
                         <span className="font-semibold text-slate-900">
                           {brl(stats.proposalTotal)}
                         </span>
